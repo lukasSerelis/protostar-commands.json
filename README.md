@@ -1,4 +1,4 @@
-# CLI Editor
+# Protostar commands.json Editor
 
 A visual editor for creating CLI interfaces for [protostar]([url](https://github.com/dgtlntv/protostar))
 
