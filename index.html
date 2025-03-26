@@ -700,14 +700,20 @@
             });
             
             // Spacebar panning
-            let isSpaceDown = false;
-            document.addEventListener('keydown', (e) => {
-                if (e.code === 'Space' && !isSpaceDown) {
-                    isSpaceDown = true;
-                    canvasContainer.style.cursor = 'grab';
-                    e.preventDefault(); // Prevent scrolling
-                }
-            });
+let isSpaceDown = false;
+document.addEventListener('keydown', (e) => {
+    // Only capture space for panning if not typing in an input/textarea/select element
+    const activeElement = document.activeElement;
+    const isInputElement = activeElement.tagName === 'INPUT' || 
+                          activeElement.tagName === 'TEXTAREA' || 
+                          activeElement.tagName === 'SELECT';
+    
+    if (e.code === 'Space' && !isSpaceDown && !isInputElement) {
+        isSpaceDown = true;
+        canvasContainer.style.cursor = 'grab';
+        e.preventDefault(); // Prevent scrolling
+    }
+});
             
             document.addEventListener('keyup', (e) => {
                 if (e.code === 'Space') {
