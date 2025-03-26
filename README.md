@@ -1,6 +1,6 @@
 # Protostar commands.json Editor
 
-A visual editor for creating CLI interfaces for [protostar]([url](https://github.com/dgtlntv/protostar))
+A visual editor for creating CLI interfaces for [protostar](https://github.com/dgtlntv/protostar)
 
 ## Warning
 This is using tonnes of AI generated code, things aren't extremely well polished, but it kinda works
