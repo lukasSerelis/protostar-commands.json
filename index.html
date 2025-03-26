@@ -1,0 +1,2559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CLI Editor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        
+        .dark {
+            --bg-color: #1a1a1a;
+            --panel-color: #242424;
+            --text-color: #f8f8f8;
+            --border-color: #444;
+            --input-bg: #333;
+            --highlight-border: #666;
+        }
+        
+        :root:not(.dark) {
+            --bg-color: #ffffff;
+            --panel-color: #f5f5f5;
+            --text-color: #111827;
+            --border-color: #e5e5e5;
+            --input-bg: #ffffff;
+            --highlight-border: #d1d5db;
+        }
+        
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+        }
+        
+        .panel {
+            background-color: var(--panel-color);
+            border: 1px solid var(--border-color);
+        }
+        
+        .canvas-wrapper {
+            position: relative;
+            overflow: hidden;
+            flex-grow: 1;
+        }
+        
+        .canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            cursor: default;
+        }
+        
+        .canvas-content {
+            position: absolute;
+            width: 5000px;
+            height: 5000px;
+            transform-origin: 0 0;
+            top: 0;
+            left: 0;
+        }
+        
+        .grid-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-size: 20px 20px;
+            background-image: 
+                linear-gradient(to right, rgba(128, 128, 128, 0.1) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(128, 128, 128, 0.1) 1px, transparent 1px);
+            pointer-events: none;
+        }
+        
+        .dark .grid-bg {
+            background-image: 
+                linear-gradient(to right, rgba(128, 128, 128, 0.15) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(128, 128, 128, 0.15) 1px, transparent 1px);
+        }
+        
+        .node {
+            position: absolute;
+            border: 2px solid;
+            width: 180px;
+            border-radius: 5px;
+            background-color: white;
+            cursor: move;
+            user-select: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            z-index: 10;
+            transition: box-shadow 0.2s;
+        }
+        
+        .node.selected {
+            box-shadow: 0 0 0 2px #3b82f6, 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .dark .node {
+            background-color: #2a2a2a;
+            color: #f1f1f1;
+        }
+        
+        .dark .node.selected {
+            box-shadow: 0 0 0 2px #60a5fa, 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .command-node { border-color: #3b82f6; }
+        .component-node { border-color: #10b981; }
+        .variable-node { border-color: #f59e0b; }
+        .parameter-node { border-color: #ec4899; }
+        
+        .header {
+            padding: 8px;
+            color: white;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .command-node .header { background-color: #3b82f6; }
+        .component-node .header { background-color: #10b981; }
+        .variable-node .header { background-color: #f59e0b; }
+        .parameter-node .header { background-color: #ec4899; }
+        
+        .content {
+            padding: 10px;
+        }
+        
+        .connector {
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background-color: #64748b;
+            cursor: pointer;
+            z-index: 20;
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+        
+        .connector:hover {
+            transform: scale(1.2);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+        }
+        
+        .input-connector {
+            top: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #3b82f6;
+        }
+        
+        .input-connector:hover {
+            transform: translateX(-50%) scale(1.2);
+        }
+        
+        .output-connector {
+            bottom: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #10b981;
+        }
+        
+        .output-connector:hover {
+            transform: translateX(-50%) scale(1.2);
+        }
+        
+        .connection {
+            position: absolute;
+            border-top: 2px dashed #64748b;
+            transform-origin: 0 0;
+            z-index: 5;
+            pointer-events: all;
+            cursor: pointer;
+            transition: border-color 0.2s, border-top-width 0.2s;
+        }
+        
+        .connection::after {
+            content: '→';
+            position: absolute;
+            right: 0;
+            top: -10px;
+            color: #64748b;
+        }
+        
+        .connection:hover, .connection.selected {
+            border-top: 3px solid #3b82f6;
+        }
+        
+        .connection:hover::after, .connection.selected::after {
+            color: #3b82f6;
+        }
+        
+        .dark .connection {
+            border-top: 2px dashed #9ca3af;
+        }
+        
+        .dark .connection::after {
+            color: #9ca3af;
+        }
+        
+        .dark .connection:hover, .dark .connection.selected {
+            border-top: 3px solid #60a5fa;
+        }
+        
+        .dark .connection:hover::after, .dark .connection.selected::after {
+            color: #60a5fa;
+        }
+        
+        .selection-box {
+            position: absolute;
+            border: 1px dashed #3b82f6;
+            background-color: rgba(59, 130, 246, 0.1);
+            z-index: 30;
+            pointer-events: none;
+        }
+        
+        .canvas-controls {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            display: flex;
+            gap: 5px;
+            z-index: 100;
+        }
+        
+        .canvas-control-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background-color: white;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-weight: bold;
+            color: #333;
+            transition: transform 0.1s;
+        }
+        
+        .dark .canvas-control-btn {
+            background-color: #333;
+            color: white;
+        }
+        
+        .canvas-control-btn:hover {
+            transform: scale(1.1);
+        }
+        
+        .canvas-control-btn:active {
+            transform: scale(0.9);
+        }
+        
+        .zoom-indicator {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 5px 10px;
+            background-color: rgba(255, 255, 255, 0.8);
+            border-radius: 20px;
+            font-size: 12px;
+            color: #333;
+            z-index: 100;
+        }
+        
+        .dark .zoom-indicator {
+            background-color: rgba(51, 51, 51, 0.8);
+            color: white;
+        }
+        
+        /* Hand icon for panning mode */
+        .canvas-panning {
+            cursor: grab;
+        }
+        
+        .canvas-panning:active {
+            cursor: grabbing;
+        }
+        
+        /* JSON highlighting */
+        .json-output-wrapper {
+            position: relative;
+        }
+        
+        .json-highlight {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            padding: 1rem;
+            pointer-events: none;
+            white-space: pre;
+            color: transparent;
+            font-family: monospace;
+            font-size: 0.875rem;
+            overflow: auto;
+        }
+        
+        .json-highlight .key { color: #e06c75; }
+        .json-highlight .string { color: #98c379; }
+        .json-highlight .number { color: #d19a66; }
+        .json-highlight .boolean { color: #c678dd; }
+        .json-highlight .null { color: #61afef; }
+        .json-highlight .punctuation { color: #bbbbbb; }
+        
+        /* Invisible actual textarea */
+        #raw-json {
+            width: 100%;
+            height: 100%;
+            padding: 1rem;
+            font-family: monospace;
+            font-size: 0.875rem;
+            white-space: pre;
+            resize: none;
+            outline: none !important;
+            background-color: transparent;
+            color: inherit;
+            border: none;
+            overflow: auto;
+        }
+        
+        /* Global variables editor */
+        .global-vars-editor {
+            width: 100%;
+            resize: none;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 8px;
+            font-family: monospace;
+            font-size: 12px;
+            background-color: var(--input-bg);
+            color: var(--text-color);
+        }
+        
+        /* Welcome message editor */
+        .welcome-editor {
+            width: 100%;
+            resize: none;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 8px;
+            font-family: monospace;
+            font-size: 12px;
+            background-color: var(--input-bg);
+            color: var(--text-color);
+        }
+        
+        /* Custom form styling for dark mode */
+        .dark input[type="text"],
+        .dark input[type="number"],
+        .dark textarea,
+        .dark select {
+            background-color: #333 !important;
+            color: #f1f1f1 !important;
+            border-color: #555 !important;
+        }
+        
+        .dark input[type="text"]:focus,
+        .dark input[type="number"]:focus,
+        .dark textarea:focus,
+        .dark select:focus {
+            border-color: #5D5CDE !important;
+            box-shadow: 0 0 0 1px #5D5CDE !important;
+        }
+        
+        /* Fix dark mode for component templates */
+        .dark .component-template {
+            color: #f1f1f1;
+            background-color: #2a2a2a !important;
+            border-color: #444;
+        }
+        
+        .dark .component-template:hover {
+            background-color: #3a3a3a !important;
+        }
+        
+        /* Component template styling */
+        .component-template {
+            transition: transform 0.1s ease, box-shadow 0.1s ease;
+        }
+        
+        .component-template:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .component-template:active {
+            transform: translateY(0);
+        }
+        
+        /* Keyboard shortcuts hint */
+        .shortcuts-hint {
+            position: fixed;
+            bottom: 70px;
+            left: 20px;
+            padding: 8px 12px;
+            background-color: rgba(255, 255, 255, 0.9);
+            border-radius: 5px;
+            font-size: 12px;
+            color: #333;
+            z-index: 100;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.3s, transform 0.3s;
+        }
+        
+        .dark .shortcuts-hint {
+            background-color: rgba(51, 51, 51, 0.9);
+            color: white;
+        }
+        
+        .shortcuts-hint.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .keyboard-key {
+            display: inline-block;
+            padding: 1px 5px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            background-color: #f5f5f5;
+            color: #333;
+            font-size: 10px;
+            margin: 0 2px;
+        }
+        
+        .dark .keyboard-key {
+            border-color: #555;
+            background-color: #444;
+            color: #eee;
+        }
+        
+        /* Hide scrollbar for Chrome, Safari and Opera */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* Hide scrollbar for IE, Edge and Firefox */
+        .no-scrollbar {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+    <div class="grid grid-cols-12 h-screen p-2 gap-2">
+        <!-- Sidebar -->
+        <div class="col-span-2 flex flex-col gap-2">
+            <!-- Components panel -->
+            <div class="panel rounded-lg overflow-hidden flex flex-col flex-grow">
+                <div class="p-3 border-b border-gray-300 dark:border-gray-700 flex justify-between items-center">
+                    <h2 class="font-bold">Components</h2>
+                    <button id="theme-toggle" class="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                        </svg>
+                    </button>
+                </div>
+                <div class="overflow-y-auto flex-1 p-3 no-scrollbar">
+                    <div class="mb-4">
+                        <h3 class="font-semibold mb-2 text-gray-800 dark:text-gray-200">Structure</h3>
+                        <div class="space-y-2">
+                            <div class="component-template bg-white dark:bg-gray-800 p-2 rounded border-l-4 border-blue-500 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" data-type="command">Command</div>
+                            <div class="component-template bg-white dark:bg-gray-800 p-2 rounded border-l-4 border-yellow-500 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" data-type="variable">Variable</div>
+                            <div class="component-template bg-white dark:bg-gray-800 p-2 rounded border-l-4 border-pink-500 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" data-type="parameter">Parameter</div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <h3 class="font-semibold mb-2 text-gray-800 dark:text-gray-200">Input Components</h3>
+                        <div class="space-y-2">
+                            <div class="component-template bg-white dark:bg-gray-800 p-2 rounded border-l-4 border-green-500 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" data-type="select">Select</div>
+                            <div class="component-template bg-white dark:bg-gray-800 p-2 rounded border-l-4 border-green-500 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" data-type="input">Input</div>
+                            <div class="component-template bg-white dark:bg-gray-800 p-2 rounded border-l-4 border-green-500 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" data-type="confirm">Confirm</div>
+                            <div class="component-template bg-white dark:bg-gray-800 p-2 rounded border-l-4 border-green-500 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" data-type="password">Password</div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h3 class="font-semibold mb-2 text-gray-800 dark:text-gray-200">Output Components</h3>
+                        <div class="space-y-2">
+                            <div class="component-template bg-white dark:bg-gray-800 p-2 rounded border-l-4 border-green-500 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" data-type="text">Text</div>
+                            <div class="component-template bg-white dark:bg-gray-800 p-2 rounded border-l-4 border-green-500 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" data-type="table">Table</div>
+                            <div class="component-template bg-white dark:bg-gray-800 p-2 rounded border-l-4 border-green-500 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" data-type="progressBar">Progress Bar</div>
+                            <div class="component-template bg-white dark:bg-gray-800 p-2 rounded border-l-4 border-green-500 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" data-type="spinner">Spinner</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Main workspace -->
+        <div class="col-span-7 panel rounded-lg overflow-hidden flex flex-col">
+            <div class="p-3 border-b border-gray-300 dark:border-gray-700 flex justify-between items-center">
+                <h2 class="font-bold">Canvas</h2>
+                <div class="flex gap-2">
+                    <button id="center-button" class="px-3 py-1 bg-gray-500 hover:bg-gray-600 text-white rounded-md text-sm">Center</button>
+                    <button id="clear-button" class="px-3 py-1 bg-red-500 hover:bg-red-600 text-white rounded-md text-sm">Clear</button>
+                </div>
+            </div>
+            
+            <!-- Canvas wrapper with transform-based scaling and panning -->
+            <div class="canvas-wrapper">
+                <div class="canvas-container" id="canvas-container">
+                    <div class="canvas-content" id="canvas-content">
+                        <div class="grid-bg"></div>
+                        <div id="canvas" class="relative w-full h-full"></div>
+                        <div id="selection-box" class="selection-box hidden"></div>
+                    </div>
+                </div>
+                
+                <!-- Fixed position controls -->
+                <div class="canvas-controls">
+                    <div class="canvas-control-btn" id="zoom-in">+</div>
+                    <div class="canvas-control-btn" id="zoom-out">−</div>
+                    <div class="canvas-control-btn" id="zoom-reset">⟳</div>
+                </div>
+                
+                <div class="zoom-indicator" id="zoom-level">100%</div>
+                
+                <div class="shortcuts-hint" id="shortcuts-hint">
+                    <div><span class="keyboard-key">Del</span> Delete selected items</div>
+                    <div><span class="keyboard-key">Ctrl</span> + <span class="keyboard-key">A</span> Select all</div>
+                    <div><span class="keyboard-key">Esc</span> Deselect all</div>
+                    <div><span class="keyboard-key">Ctrl</span> + <span class="keyboard-key">C</span> / <span class="keyboard-key">V</span> Copy/Paste</div>
+                    <div><span class="keyboard-key">Space</span> or <span class="keyboard-key">Middle Mouse</span> Hold to pan</div>
+                    <div>Click + Drag to select multiple</div>
+                    <div>Mouse wheel to zoom</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Right sidebar -->
+        <div class="col-span-3 flex flex-col gap-2">
+            <!-- CLI Configuration -->
+            <div class="panel rounded-lg overflow-hidden">
+                <div class="p-3 border-b border-gray-300 dark:border-gray-700">
+                    <h2 class="font-bold">CLI Configuration</h2>
+                </div>
+                <div class="p-4 space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Welcome Message</label>
+                        <textarea id="welcome-message" class="welcome-editor border-gray-300 dark:border-gray-600" rows="2">Welcome to TaskTrack CLI! Type 'help' to see available commands.</textarea>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Global Variables</label>
+                        <textarea id="global-variables" class="global-vars-editor border-gray-300 dark:border-gray-600" rows="3" placeholder="Enter as JSON, e.g. &#10;{&#10;  &quot;isLoggedIn&quot;: &quot;false&quot;&#10;}">{"isLoggedIn": "false"}</textarea>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Properties panel -->
+            <div class="panel rounded-lg overflow-hidden flex-1">
+                <div class="p-3 border-b border-gray-300 dark:border-gray-700">
+                    <h2 class="font-bold">Properties</h2>
+                </div>
+                <div id="properties-panel" class="p-4 overflow-y-auto no-scrollbar">
+                    <p class="text-gray-500 dark:text-gray-400 text-center mt-8">Select a node to edit its properties</p>
+                </div>
+            </div>
+            
+            <!-- JSON output -->
+            <div class="panel rounded-lg overflow-hidden flex-1 flex flex-col">
+                <div class="p-3 border-b border-gray-300 dark:border-gray-700 flex justify-between items-center">
+                    <h2 class="font-bold">JSON Output</h2>
+                    <button id="copy-json" class="px-3 py-1 bg-indigo-500 hover:bg-indigo-600 text-white rounded-md text-sm">Copy</button>
+                </div>
+                <div class="flex-1 overflow-hidden relative">
+                    <!-- The actual JSON content (pure text, no HTML markup) -->
+                    <textarea id="raw-json" class="no-scrollbar" readonly></textarea>
+                    
+                    <!-- Syntax highlighting overlay (visual only) -->
+                    <div id="json-highlight" class="json-highlight no-scrollbar"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Toast message -->
+    <div id="toast" class="fixed bottom-4 right-4 bg-gray-800 text-white px-4 py-2 rounded-lg shadow-lg transform translate-y-20 opacity-0 transition-all duration-300 z-50 hidden"></div>
+    
+    <script>
+        // Dark mode support
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.classList.add('dark');
+        }
+        
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
+            if (event.matches) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        });
+        
+        document.getElementById('theme-toggle').addEventListener('click', () => {
+            document.documentElement.classList.toggle('dark');
+        });
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            // Show shortcuts hint briefly
+            const shortcutsHint = document.getElementById('shortcuts-hint');
+            shortcutsHint.classList.add('visible');
+            setTimeout(() => {
+                shortcutsHint.classList.remove('visible');
+            }, 6000);
+            
+            // Main elements
+            const canvas = document.getElementById('canvas');
+            const canvasContainer = document.getElementById('canvas-container');
+            const canvasContent = document.getElementById('canvas-content');
+            const propertiesPanel = document.getElementById('properties-panel');
+            const rawJson = document.getElementById('raw-json');
+            const jsonHighlight = document.getElementById('json-highlight');
+            const toast = document.getElementById('toast');
+            const welcomeMessage = document.getElementById('welcome-message');
+            const globalVariables = document.getElementById('global-variables');
+            const selectionBox = document.getElementById('selection-box');
+            const zoomIndicator = document.getElementById('zoom-level');
+            
+            // Global state
+            let nodes = [];
+            let connections = [];
+            let selectedNodes = new Set();
+            let selectedConnections = new Set();
+            let nextNodeId = 1;
+            let isDraggingConnection = false;
+            let dragStartConnector = null;
+            let tempConnection = null;
+            let isSelecting = false;
+            let selectionStart = { x: 0, y: 0 };
+            let isPanning = false;
+            let panStart = { x: 0, y: 0 };
+            let copiedNodes = [];
+            
+            // Create the canvas state object
+            let canvasState = {
+                offsetX: 0,             // Canvas content X offset (scrolling)
+                offsetY: 0,             // Canvas content Y offset (scrolling)
+                scale: 1.0,             // Current zoom scale
+                containerWidth: 0,      // Width of the container
+                containerHeight: 0      // Height of the container
+            };
+            
+            // Initialize canvas state
+            function updateCanvasSize() {
+                const rect = canvasContainer.getBoundingClientRect();
+                canvasState.containerWidth = rect.width;
+                canvasState.containerHeight = rect.height;
+            }
+            updateCanvasSize();
+            
+            // Initial canvas centering
+            function centerCanvas() {
+                canvasState.offsetX = (canvasContent.offsetWidth - canvasState.containerWidth) / 2;
+                canvasState.offsetY = (canvasContent.offsetHeight - canvasState.containerHeight) / 2;
+                updateCanvasTransform();
+            }
+            centerCanvas();
+            
+            // Update canvas transform based on current state
+            function updateCanvasTransform() {
+                canvasContent.style.transform = `translate(${-canvasState.offsetX}px, ${-canvasState.offsetY}px) scale(${canvasState.scale})`;
+                zoomIndicator.textContent = `${Math.round(canvasState.scale * 100)}%`;
+            }
+            
+            // Core coordinate conversion functions - from screen to canvas
+            function screenToCanvas(screenX, screenY) {
+                const rect = canvasContainer.getBoundingClientRect();
+                return {
+                    x: (screenX - rect.left + canvasState.offsetX) / canvasState.scale,
+                    y: (screenY - rect.top + canvasState.offsetY) / canvasState.scale
+                };
+            }
+            
+            // Canvas to screen coordinates
+            function canvasToScreen(canvasX, canvasY) {
+                const rect = canvasContainer.getBoundingClientRect();
+                return {
+                    x: canvasX * canvasState.scale - canvasState.offsetX + rect.left,
+                    y: canvasY * canvasState.scale - canvasState.offsetY + rect.top
+                };
+            }
+            
+            // Window resize handler
+            window.addEventListener('resize', () => {
+                updateCanvasSize();
+                updateCanvasTransform();
+            });
+            
+            // Spacebar panning
+            let isSpaceDown = false;
+            document.addEventListener('keydown', (e) => {
+                if (e.code === 'Space' && !isSpaceDown) {
+                    isSpaceDown = true;
+                    canvasContainer.style.cursor = 'grab';
+                    e.preventDefault(); // Prevent scrolling
+                }
+            });
+            
+            document.addEventListener('keyup', (e) => {
+                if (e.code === 'Space') {
+                    isSpaceDown = false;
+                    if (!isPanning) {
+                        canvasContainer.style.cursor = 'default';
+                    }
+                }
+            });
+            
+            // Panning with mouse
+            canvasContainer.addEventListener('mousedown', (e) => {
+                // If holding space or middle mouse (button 1), start panning
+                if (isSpaceDown || e.button === 1) {
+                    startPanning(e);
+                    return;
+                }
+                
+                // If left click (button 0) and clicking on the background, start selection
+                if (e.button === 0 && (e.target === canvas || e.target === canvasContent || e.target.classList.contains('grid-bg'))) {
+                    // Start selection
+                    isSelecting = true;
+                    
+                    // Get canvas coordinates
+                    const canvasCoords = screenToCanvas(e.clientX, e.clientY);
+                    selectionStart.x = canvasCoords.x;
+                    selectionStart.y = canvasCoords.y;
+                    
+                    // Reset selection box (in canvas coordinates)
+                    selectionBox.style.left = `${selectionStart.x}px`;
+                    selectionBox.style.top = `${selectionStart.y}px`;
+                    selectionBox.style.width = '0px';
+                    selectionBox.style.height = '0px';
+                    selectionBox.classList.remove('hidden');
+                    
+                    // Clear selection if not holding Ctrl
+                    if (!e.ctrlKey && !e.metaKey) {
+                        clearSelection();
+                    }
+                }
+            });
+            
+            // Mouse move for selection box or panning
+            canvasContainer.addEventListener('mousemove', (e) => {
+                if (isSelecting) {
+                    // Get current position in canvas coordinates
+                    const canvasCoords = screenToCanvas(e.clientX, e.clientY);
+                    
+                    // Calculate box dimensions
+                    const width = Math.abs(canvasCoords.x - selectionStart.x);
+                    const height = Math.abs(canvasCoords.y - selectionStart.y);
+                    
+                    // Determine box position (handle drawing in any direction)
+                    const left = Math.min(selectionStart.x, canvasCoords.x);
+                    const top = Math.min(selectionStart.y, canvasCoords.y);
+                    
+                    // Update selection box (using canvas coordinates)
+                    selectionBox.style.left = `${left}px`;
+                    selectionBox.style.top = `${top}px`;
+                    selectionBox.style.width = `${width}px`;
+                    selectionBox.style.height = `${height}px`;
+                    
+                    // Select nodes that intersect with selection box
+                    selectNodesInBox(left, top, width, height);
+                }
+                else if (isPanning) {
+                    // Handle panning
+                    handlePanning(e);
+                    e.preventDefault();
+                }
+            });
+            
+            // Mouse up for selection box or panning
+            document.addEventListener('mouseup', (e) => {
+                if (isSelecting) {
+                    isSelecting = false;
+                    selectionBox.classList.add('hidden');
+                }
+                
+                if (isPanning) {
+                    isPanning = false;
+                    canvasContainer.style.cursor = isSpaceDown ? 'grab' : 'default';
+                }
+            });
+            
+            // Start panning the canvas
+            function startPanning(e) {
+                isPanning = true;
+                canvasContainer.style.cursor = 'grabbing';
+                
+                panStart.x = e.clientX;
+                panStart.y = e.clientY;
+                
+                e.preventDefault();
+            }
+            
+            // Handle panning movement
+            function handlePanning(e) {
+                if (!isPanning) return;
+                
+                // Calculate how much to pan
+                const dx = e.clientX - panStart.x;
+                const dy = e.clientY - panStart.y;
+                
+                // Update canvas offset
+                canvasState.offsetX -= dx;
+                canvasState.offsetY -= dy;
+                
+                // Update transform
+                updateCanvasTransform();
+                
+                // Update starting point
+                panStart.x = e.clientX;
+                panStart.y = e.clientY;
+            }
+            
+            // Select nodes that intersect with the selection box
+            function selectNodesInBox(boxLeft, boxTop, boxWidth, boxHeight) {
+                const boxRight = boxLeft + boxWidth;
+                const boxBottom = boxTop + boxHeight;
+                
+                nodes.forEach(nodeData => {
+                    const node = document.getElementById(nodeData.id);
+                    if (!node) return;
+                    
+                    // Get node position and size (these are already in canvas coordinates)
+                    const nodeLeft = parseInt(node.style.left);
+                    const nodeTop = parseInt(node.style.top);
+                    const nodeRight = nodeLeft + node.offsetWidth;
+                    const nodeBottom = nodeTop + node.offsetHeight;
+                    
+                    // Check if node intersects with selection box
+                    const intersects = 
+                        nodeLeft < boxRight &&
+                        nodeRight > boxLeft &&
+                        nodeTop < boxBottom &&
+                        nodeBottom > boxTop;
+                    
+                    // Update selection state
+                    if (intersects) {
+                        if (!selectedNodes.has(nodeData.id)) {
+                            selectedNodes.add(nodeData.id);
+                            node.classList.add('selected');
+                        }
+                    }
+                });
+                
+                // Update properties panel for selection
+                updatePropertiesPanel();
+            }
+            
+            // Component definitions
+            const componentDefinitions = {
+                command: {
+                    title: 'Command',
+                    nodeType: 'command-node',
+                    icon: '🔹',
+                    hasInput: true,  // Commands can receive from parameters
+                    hasOutput: true,
+                    properties: {
+                        commandName: { type: 'text', label: 'Command Name', default: '' },
+                        description: { type: 'text', label: 'Description', default: '' },
+                        alias: { type: 'text', label: 'Aliases (comma separated)', default: '' }
+                    }
+                },
+                variable: {
+                    title: 'Variable',
+                    nodeType: 'variable-node',
+                    icon: '🔸',
+                    hasInput: false,
+                    hasOutput: true,  // Variables can connect to components
+                    properties: {
+                        name: { type: 'text', label: 'Variable Name', default: '' },
+                        value: { type: 'text', label: 'Initial Value', default: '' }
+                    }
+                },
+                parameter: {
+                    title: 'Parameter',
+                    nodeType: 'parameter-node',
+                    icon: '📌',
+                    hasInput: false,
+                    hasOutput: true,  // Parameters can connect to commands
+                    properties: {
+                        name: { type: 'text', label: 'Parameter Name', default: '' },
+                        description: { type: 'text', label: 'Description', default: '' },
+                        type: { type: 'select', label: 'Type',
+                            options: ['string', 'number', 'boolean'], default: 'string' },
+                        required: { type: 'checkbox', label: 'Required', default: false },
+                        isPositional: { type: 'checkbox', label: 'Is Positional', default: false },
+                        default: { type: 'text', label: 'Default Value', default: '' },
+                        choices: { type: 'textarea', label: 'Choices (comma separated)', default: '', rows: 2 }
+                    }
+                },
+                text: {
+                    title: 'Text',
+                    nodeType: 'component-node',
+                    icon: '📝',
+                    hasInput: true,
+                    hasOutput: true,
+                    properties: {
+                        output: { type: 'textarea', label: 'Text Output', default: '', rows: 3 },
+                        duration: { type: 'number', label: 'Duration (ms)', default: 0 }
+                    }
+                },
+                progressBar: {
+                    title: 'Progress Bar',
+                    nodeType: 'component-node',
+                    icon: '📊',
+                    hasInput: true,
+                    hasOutput: true,
+                    properties: {
+                        output: { type: 'text', label: 'Label', default: 'Loading...' },
+                        duration: { type: 'number', label: 'Duration (ms)', default: 2000 }
+                    }
+                },
+                spinner: {
+                    title: 'Spinner',
+                    nodeType: 'component-node',
+                    icon: '🔄',
+                    hasInput: true,
+                    hasOutput: true,
+                    properties: {
+                        output: { type: 'text', label: 'Label', default: 'Processing...' },
+                        duration: { type: 'number', label: 'Duration (ms)', default: 2000 },
+                        conclusion: { type: 'select', label: 'Conclusion', 
+                            options: ['stop', 'success', 'fail'], default: 'success' }
+                    }
+                },
+                table: {
+                    title: 'Table',
+                    nodeType: 'component-node',
+                    icon: '📋',
+                    hasInput: true,
+                    hasOutput: true,
+                    properties: {
+                        tableData: { type: 'textarea', label: 'Table Data (JSON Array)', 
+                            default: '[["Header1","Header2"],["Value1","Value2"]]', rows: 5 }
+                    }
+                },
+                input: {
+                    title: 'Input',
+                    nodeType: 'component-node',
+                    icon: '✍️',
+                    hasInput: true,
+                    hasOutput: true,
+                    properties: {
+                        name: { type: 'text', label: 'Name', default: 'input1' },
+                        message: { type: 'text', label: 'Prompt Message', default: 'Enter value:' },
+                        initial: { type: 'text', label: 'Initial Value (optional)', default: '' }
+                    }
+                },
+                select: {
+                    title: 'Select',
+                    nodeType: 'component-node',
+                    icon: '🔽',
+                    hasInput: true,
+                    hasOutput: true,
+                    properties: {
+                        name: { type: 'text', label: 'Name', default: 'select1' },
+                        message: { type: 'text', label: 'Prompt Message', default: 'Choose an option:' },
+                        choices: { type: 'textarea', label: 'Choices (JSON Array)', 
+                            default: '["Option 1", "Option 2"]', rows: 3 }
+                    }
+                },
+                confirm: {
+                    title: 'Confirm',
+                    nodeType: 'component-node',
+                    icon: '✓',
+                    hasInput: true,
+                    hasOutput: true,
+                    properties: {
+                        name: { type: 'text', label: 'Name', default: 'confirm1' },
+                        message: { type: 'text', label: 'Prompt Message', default: 'Are you sure?' },
+                        initial: { type: 'checkbox', label: 'Initial Value', default: false }
+                    }
+                },
+                password: {
+                    title: 'Password',
+                    nodeType: 'component-node',
+                    icon: '🔒',
+                    hasInput: true,
+                    hasOutput: true,
+                    properties: {
+                        name: { type: 'text', label: 'Name', default: 'password1' },
+                        message: { type: 'text', label: 'Prompt Message', default: 'Enter password:' }
+                    }
+                },
+                conditional: {
+                    title: 'Conditional',
+                    nodeType: 'component-node',
+                    icon: '🔀',
+                    hasInput: true,
+                    hasOutput: true,
+                    properties: {
+                        if: { type: 'text', label: 'Condition', default: '' },
+                        then: { type: 'textarea', label: 'Then Components (JSON)', default: '[]', rows: 3 },
+                        else: { type: 'textarea', label: 'Else Components (JSON)', default: '{}', rows: 3 }
+                    }
+                }
+            };
+            
+            // Add component templates click handlers
+            document.querySelectorAll('.component-template').forEach(template => {
+                template.addEventListener('click', () => {
+                    const type = template.dataset.type;
+                    
+                    // Calculate center position in viewport
+                    const centerX = canvasState.containerWidth / 2 / canvasState.scale + canvasState.offsetX / canvasState.scale;
+                    const centerY = canvasState.containerHeight / 2 / canvasState.scale + canvasState.offsetY / canvasState.scale;
+                    
+                    createNode(type, centerX - 90, centerY - 50);
+                });
+            });
+            
+            // Create a new node
+            function createNode(type, left, top) {
+                const definition = componentDefinitions[type];
+                if (!definition) return;
+                
+                const nodeId = `node-${nextNodeId++}`;
+                const node = document.createElement('div');
+                node.id = nodeId;
+                node.className = `node ${definition.nodeType}`;
+                node.dataset.type = type;
+                node.dataset.nodeid = nodeId;
+                
+                node.innerHTML = `
+                    <div class="header">
+                        <span>${definition.icon} ${definition.title}</span>
+                        <button class="delete-button text-white hover:text-red-200 text-sm">&times;</button>
+                    </div>
+                    <div class="content">
+                        <div class="node-name">${type}</div>
+                    </div>
+                `;
+                
+                // Add connectors if needed
+                if (definition.hasInput) {
+                    const inputConnector = document.createElement('div');
+                    inputConnector.className = 'connector input-connector';
+                    inputConnector.dataset.nodeid = nodeId;
+                    inputConnector.dataset.type = 'input';
+                    node.appendChild(inputConnector);
+                    
+                    // Input connector events
+                    inputConnector.addEventListener('mouseup', (e) => {
+                        e.stopPropagation();
+                        if (isDraggingConnection && dragStartConnector) {
+                            // Only allow connecting from output to input
+                            if (dragStartConnector.dataset.type === 'output') {
+                                const sourceId = dragStartConnector.dataset.nodeid;
+                                const targetId = nodeId;
+                                
+                                // Don't connect to itself
+                                if (sourceId !== targetId) {
+                                    createConnection(sourceId, targetId);
+                                }
+                            }
+                            
+                            stopConnectionDrag();
+                        }
+                    });
+                }
+                
+                if (definition.hasOutput) {
+                    const outputConnector = document.createElement('div');
+                    outputConnector.className = 'connector output-connector';
+                    outputConnector.dataset.nodeid = nodeId;
+                    outputConnector.dataset.type = 'output';
+                    node.appendChild(outputConnector);
+                    
+                    // Output connector events
+                    outputConnector.addEventListener('mousedown', (e) => {
+                        e.stopPropagation();
+                        startConnectionDrag(outputConnector, e);
+                    });
+                }
+                
+                // Set position
+                node.style.left = `${left}px`;
+                node.style.top = `${top}px`;
+                
+                // Add to canvas
+                canvas.appendChild(node);
+                
+                // Make draggable
+                makeDraggable(node);
+                
+                // Create node data
+                const nodeData = {
+                    id: nodeId,
+                    type: type,
+                    properties: {}
+                };
+                
+                // Initialize properties with defaults
+                if (definition.properties) {
+                    for (const [key, prop] of Object.entries(definition.properties)) {
+                        nodeData.properties[key] = prop.default;
+                    }
+                }
+                
+                // Store node data
+                nodes.push(nodeData);
+                
+                // Set click handler for selection
+                node.addEventListener('mousedown', (e) => {
+                    // Skip if clicking on a connector or delete button
+                    if (e.target.classList.contains('connector') || 
+                        e.target.classList.contains('delete-button')) {
+                        return;
+                    }
+                    
+                    // Skip if panning
+                    if (isSpaceDown || e.button === 1) {
+                        e.stopPropagation();
+                        return;
+                    }
+                    
+                    const isMultiSelect = e.ctrlKey || e.metaKey;
+                    
+                    if (!isMultiSelect && !selectedNodes.has(nodeId)) {
+                        clearSelection();
+                    }
+                    
+                    toggleNodeSelection(nodeId);
+                    
+                    // Stop propagation to prevent canvas selection
+                    e.stopPropagation();
+                });
+                
+                // Delete button handler
+                node.querySelector('.delete-button').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteNode(nodeId);
+                });
+                
+                // Update display and JSON
+                updateNodeDisplay(nodeData);
+                updateJsonOutput();
+                
+                // Return the node id
+                return nodeId;
+            }
+            
+            // Toggle a node's selection state
+            function toggleNodeSelection(nodeId) {
+                const node = document.getElementById(nodeId);
+                if (!node) return;
+                
+                if (selectedNodes.has(nodeId)) {
+                    selectedNodes.delete(nodeId);
+                    node.classList.remove('selected');
+                } else {
+                    selectedNodes.add(nodeId);
+                    node.classList.add('selected');
+                }
+                
+                updatePropertiesPanel();
+            }
+            
+            // Clear all selections
+            function clearSelection() {
+                // Clear node selections
+                selectedNodes.forEach(nodeId => {
+                    const node = document.getElementById(nodeId);
+                    if (node) node.classList.remove('selected');
+                });
+                selectedNodes.clear();
+                
+                // Clear connection selections
+                selectedConnections.forEach(connId => {
+                    const conn = document.querySelector(`.connection[data-id="${connId}"]`);
+                    if (conn) conn.classList.remove('selected');
+                });
+                selectedConnections.clear();
+                
+                // Update properties panel
+                updatePropertiesPanel();
+            }
+            
+            // Select all items
+            function selectAll() {
+                // Select all nodes
+                nodes.forEach(node => {
+                    selectedNodes.add(node.id);
+                    const el = document.getElementById(node.id);
+                    if (el) el.classList.add('selected');
+                });
+                
+                // Select all connections
+                connections.forEach(conn => {
+                    selectedConnections.add(conn.id);
+                    const el = document.querySelector(`.connection[data-id="${conn.id}"]`);
+                    if (el) el.classList.add('selected');
+                });
+                
+                // Update properties panel
+                updatePropertiesPanel();
+            }
+            
+            // Delete selected items
+            function deleteSelected() {
+                // Delete selected connections first
+                const connectionsToDelete = Array.from(selectedConnections);
+                connectionsToDelete.forEach(deleteConnection);
+                
+                // Delete selected nodes
+                const nodesToDelete = Array.from(selectedNodes);
+                nodesToDelete.forEach(deleteNode);
+                
+                // Clear selections
+                selectedNodes.clear();
+                selectedConnections.clear();
+                
+                // Update properties panel
+                updatePropertiesPanel();
+                
+                // Update JSON output
+                updateJsonOutput();
+            }
+            
+            // Update the properties panel
+            function updatePropertiesPanel() {
+                if (selectedNodes.size === 0) {
+                    // No selection
+                    propertiesPanel.innerHTML = `<p class="text-gray-500 dark:text-gray-400 text-center mt-8">Select a node to edit its properties</p>`;
+                } else if (selectedNodes.size === 1) {
+                    // Single node selected - show properties
+                    const nodeId = Array.from(selectedNodes)[0];
+                    renderPropertiesPanel(nodeId);
+                } else {
+                    // Multiple nodes selected
+                    propertiesPanel.innerHTML = `<p class="text-gray-500 dark:text-gray-400 text-center mt-8">${selectedNodes.size} nodes selected</p>`;
+                }
+            }
+            
+            // Make a node draggable
+            function makeDraggable(element) {
+                let isDragging = false;
+                let startX, startY;
+                let initialLeft, initialTop;
+                
+                element.addEventListener('mousedown', function(e) {
+                    // Skip if clicking on a connector or delete button
+                    if (e.target.classList.contains('connector') || 
+                        e.target.classList.contains('delete-button')) {
+                        return;
+                    }
+                    
+                    // Skip if panning
+                    if (isSpaceDown || e.button === 1) {
+                        return;
+                    }
+                    
+                    e.preventDefault();
+                    
+                    // Get initial element position
+                    initialLeft = parseInt(element.style.left);
+                    initialTop = parseInt(element.style.top);
+                    
+                    // Get starting mouse position (in canvas coordinates)
+                    const canvasCoords = screenToCanvas(e.clientX, e.clientY);
+                    startX = canvasCoords.x;
+                    startY = canvasCoords.y;
+                    
+                    // Start dragging immediately
+                    isDragging = true;
+                });
+                
+                document.addEventListener('mousemove', function(e) {
+                    if (!isDragging) return;
+                    
+                    // Get current mouse position (in canvas coordinates)
+                    const canvasCoords = screenToCanvas(e.clientX, e.clientY);
+                    
+                    // Calculate difference from starting positions
+                    const dx = canvasCoords.x - startX;
+                    const dy = canvasCoords.y - startY;
+                    
+                    // Calculate new position
+                    const newLeft = initialLeft + dx;
+                    const newTop = initialTop + dy;
+                    
+                    // Snap to grid
+                    const gridSize = 10;
+                    const snappedLeft = Math.round(newLeft / gridSize) * gridSize;
+                    const snappedTop = Math.round(newTop / gridSize) * gridSize;
+                    
+                    // If multiple nodes are selected, move them all
+                    if (selectedNodes.has(element.dataset.nodeid)) {
+                        // Calculate offset from the initial position
+                        const offsetX = snappedLeft - initialLeft;
+                        const offsetY = snappedTop - initialTop;
+                        
+                        // Move all selected nodes
+                        selectedNodes.forEach(nodeId => {
+                            const node = document.getElementById(nodeId);
+                            if (!node) return;
+                            
+                            // Only calculate once for the first node (the one being dragged)
+                            if (node === element) {
+                                node.style.left = `${snappedLeft}px`;
+                                node.style.top = `${snappedTop}px`;
+                            } else {
+                                // For other nodes, apply the same offset
+                                const nodeLeft = parseInt(node.style.left);
+                                const nodeTop = parseInt(node.style.top);
+                                
+                                node.style.left = `${nodeLeft + offsetX}px`;
+                                node.style.top = `${nodeTop + offsetY}px`;
+                            }
+                        });
+                    } else {
+                        // Just move this node
+                        element.style.left = `${snappedLeft}px`;
+                        element.style.top = `${snappedTop}px`;
+                    }
+                    
+                    // Update connections
+                    updateConnections();
+                });
+                
+                document.addEventListener('mouseup', function() {
+                    if (isDragging) {
+                        isDragging = false;
+                        updateJsonOutput();
+                    }
+                });
+            }
+            
+            // Keyboard shortcuts
+            document.addEventListener('keydown', function(e) {
+                // Delete selected items with Delete key
+                if (e.key === 'Delete') {
+                    deleteSelected();
+                }
+                
+                // Select all with Ctrl+A
+                if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    selectAll();
+                }
+                
+                // Deselect all with Escape
+                if (e.key === 'Escape') {
+                    clearSelection();
+                }
+                
+                // Copy selected nodes with Ctrl+C
+                if (e.key === 'c' && (e.ctrlKey || e.metaKey)) {
+                    copySelectedNodes();
+                }
+                
+                // Paste nodes with Ctrl+V
+                if (e.key === 'v' && (e.ctrlKey || e.metaKey)) {
+                    pasteNodes();
+                }
+                
+                // Toggle shortcuts hint with ?
+                if (e.key === '?') {
+                    toggleShortcutsHint();
+                }
+            });
+            
+            // Show/hide shortcuts hint
+            function toggleShortcutsHint() {
+                const shortcutsHint = document.getElementById('shortcuts-hint');
+                shortcutsHint.classList.toggle('visible');
+                
+                // Hide after 5 seconds if visible
+                if (shortcutsHint.classList.contains('visible')) {
+                    setTimeout(() => {
+                        shortcutsHint.classList.remove('visible');
+                    }, 5000);
+                }
+            }
+            
+            // Mouse wheel for zooming - Fixed to properly maintain cursor position
+            canvasContainer.addEventListener('wheel', function(e) {
+                e.preventDefault();
+                
+                // Get mouse position in screen space
+                const rect = canvasContainer.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+                
+                // Calculate the point in world space before zoom
+                const worldX = (mouseX + canvasState.offsetX) / canvasState.scale;
+                const worldY = (mouseY + canvasState.offsetY) / canvasState.scale;
+                
+                // Determine zoom factor
+                const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+                
+                // Apply zoom
+                const oldScale = canvasState.scale;
+                canvasState.scale = Math.max(0.1, Math.min(3, canvasState.scale * zoomFactor));
+                
+                // Calculate new offsets to keep the point under the cursor fixed
+                canvasState.offsetX = worldX * canvasState.scale - mouseX;
+                canvasState.offsetY = worldY * canvasState.scale - mouseY;
+                
+                // Update canvas transform
+                updateCanvasTransform();
+                
+                // Update connections
+                updateConnections();
+            });
+            
+            // Zoom control buttons
+            document.getElementById('zoom-in').addEventListener('click', function() {
+                zoomAtCenter(1.2);
+            });
+            
+            document.getElementById('zoom-out').addEventListener('click', function() {
+                zoomAtCenter(0.8);
+            });
+            
+            document.getElementById('zoom-reset').addEventListener('click', function() {
+                // Get center of viewport
+                const centerX = canvasState.containerWidth / 2;
+                const centerY = canvasState.containerHeight / 2;
+                
+                // Calculate world point at center
+                const worldX = (centerX + canvasState.offsetX) / canvasState.scale;
+                const worldY = (centerY + canvasState.offsetY) / canvasState.scale;
+                
+                // Reset scale to 1.0
+                canvasState.scale = 1.0;
+                
+                // Adjust offsets to maintain center
+                canvasState.offsetX = worldX * canvasState.scale - centerX;
+                canvasState.offsetY = worldY * canvasState.scale - centerY;
+                
+                // Update canvas transform
+                updateCanvasTransform();
+                
+                // Update connections
+                updateConnections();
+            });
+            
+            // Zoom at the center of the viewport
+            function zoomAtCenter(factor) {
+                // Get center of viewport
+                const centerX = canvasState.containerWidth / 2;
+                const centerY = canvasState.containerHeight / 2;
+                
+                // Calculate world point at center
+                const worldX = (centerX + canvasState.offsetX) / canvasState.scale;
+                const worldY = (centerY + canvasState.offsetY) / canvasState.scale;
+                
+                // Apply zoom
+                canvasState.scale = Math.max(0.1, Math.min(3, canvasState.scale * factor));
+                
+                // Adjust offsets to maintain center
+                canvasState.offsetX = worldX * canvasState.scale - centerX;
+                canvasState.offsetY = worldY * canvasState.scale - centerY;
+                
+                // Update canvas transform
+                updateCanvasTransform();
+                
+                // Update connections
+                updateConnections();
+            }
+            
+            // Copy selected nodes
+            function copySelectedNodes() {
+                if (selectedNodes.size === 0) return;
+                
+                copiedNodes = [];
+                
+                // Get all selected nodes
+                selectedNodes.forEach(nodeId => {
+                    const nodeData = getNodeById(nodeId);
+                    if (nodeData) {
+                        // Create a deep copy
+                        const nodeCopy = JSON.parse(JSON.stringify(nodeData));
+                        
+                        // Get node position
+                        const node = document.getElementById(nodeId);
+                        if (node) {
+                            nodeCopy.position = {
+                                left: parseInt(node.style.left),
+                                top: parseInt(node.style.top)
+                            };
+                            
+                            copiedNodes.push(nodeCopy);
+                        }
+                    }
+                });
+                
+                showToast(`Copied ${copiedNodes.length} nodes`);
+            }
+            
+            // Paste copied nodes
+            function pasteNodes() {
+                if (copiedNodes.length === 0) return;
+                
+                // Clear current selection
+                clearSelection();
+                
+                // Calculate center of viewport in canvas coordinates
+                const centerX = canvasState.containerWidth / 2 / canvasState.scale + canvasState.offsetX / canvasState.scale;
+                const centerY = canvasState.containerHeight / 2 / canvasState.scale + canvasState.offsetY / canvasState.scale;
+                
+                // Calculate center of copied nodes
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                
+                copiedNodes.forEach(nodeCopy => {
+                    if (nodeCopy.position) {
+                        minX = Math.min(minX, nodeCopy.position.left);
+                        minY = Math.min(minY, nodeCopy.position.top);
+                        maxX = Math.max(maxX, nodeCopy.position.left);
+                        maxY = Math.max(maxY, nodeCopy.position.top);
+                    }
+                });
+                
+                const copiedNodesCenter = {
+                    x: (minX + maxX) / 2,
+                    y: (minY + maxY) / 2
+                };
+                
+                // Calculate offset from paste position to copied nodes center
+                const offsetX = centerX - copiedNodesCenter.x;
+                const offsetY = centerY - copiedNodesCenter.y;
+                
+                // Track new nodes and their original IDs for connection restoration
+                const newNodesMap = new Map();
+                
+                // Create new nodes
+                copiedNodes.forEach(nodeCopy => {
+                    if (!nodeCopy.position) return;
+                    
+                    // Calculate new position
+                    const newLeft = nodeCopy.position.left + offsetX;
+                    const newTop = nodeCopy.position.top + offsetY;
+                    
+                    // Create the node
+                    const newNodeId = createNode(nodeCopy.type, newLeft, newTop);
+                    
+                    // Update its properties
+                    const newNodeData = getNodeById(newNodeId);
+                    if (newNodeData) {
+                        newNodeData.properties = JSON.parse(JSON.stringify(nodeCopy.properties));
+                        updateNodeDisplay(newNodeData);
+                        
+                        // Add to selection
+                        selectedNodes.add(newNodeId);
+                        const node = document.getElementById(newNodeId);
+                        if (node) node.classList.add('selected');
+                        
+                        // Store mapping for connection restoration
+                        newNodesMap.set(nodeCopy.id, newNodeId);
+                    }
+                });
+                
+                // TODO: Restore connections between pasted nodes
+                
+                updatePropertiesPanel();
+                showToast(`Pasted ${newNodesMap.size} nodes`);
+            }
+            
+            // Start dragging a connection
+            function startConnectionDrag(connector, event) {
+                // Don't start connection if panning
+                if (isSpaceDown || event.button === 1) return;
+                
+                isDraggingConnection = true;
+                dragStartConnector = connector;
+                
+                // Create a temporary connection line
+                tempConnection = document.createElement('div');
+                tempConnection.className = 'connection';
+                canvas.appendChild(tempConnection);
+                
+                // Update the connection line on mousemove
+                document.addEventListener('mousemove', updateTempConnection);
+                document.addEventListener('mouseup', handleConnectionDragEnd);
+                
+                // Initial update
+                updateTempConnection(event);
+            }
+            
+            // Update the temporary connection during drag
+            function updateTempConnection(event) {
+                if (!isDraggingConnection || !tempConnection || !dragStartConnector) return;
+                
+                // Get connector position in canvas coordinates
+                const connectorRect = dragStartConnector.getBoundingClientRect();
+                const connectorPos = screenToCanvas(
+                    connectorRect.left + connectorRect.width / 2,
+                    connectorRect.top + connectorRect.height / 2
+                );
+                
+                // Get mouse position in canvas coordinates
+                const mousePos = screenToCanvas(event.clientX, event.clientY);
+                
+                // Calculate distance and angle
+                const dx = mousePos.x - connectorPos.x;
+                const dy = mousePos.y - connectorPos.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+                
+                // Update the connection
+                tempConnection.style.width = `${distance}px`;
+                tempConnection.style.left = `${connectorPos.x}px`;
+                tempConnection.style.top = `${connectorPos.y}px`;
+                tempConnection.style.transform = `rotate(${angle}deg)`;
+            }
+            
+            // Handle the end of a connection drag
+            function handleConnectionDragEnd(event) {
+                // See if we're over an input connector
+                const element = document.elementFromPoint(event.clientX, event.clientY);
+                
+                if (element && element.classList.contains('connector') && element.dataset.type === 'input') {
+                    const sourceId = dragStartConnector.dataset.nodeid;
+                    const targetId = element.dataset.nodeid;
+                    
+                    // Don't connect to itself
+                    if (sourceId !== targetId) {
+                        createConnection(sourceId, targetId);
+                    }
+                }
+                
+                stopConnectionDrag();
+            }
+            
+            // Stop dragging a connection
+            function stopConnectionDrag() {
+                isDraggingConnection = false;
+                
+                if (tempConnection) {
+                    tempConnection.remove();
+                    tempConnection = null;
+                }
+                
+                document.removeEventListener('mousemove', updateTempConnection);
+                document.removeEventListener('mouseup', handleConnectionDragEnd);
+                dragStartConnector = null;
+            }
+            
+            // Create a connection between two nodes
+            function createConnection(sourceId, targetId) {
+                // Check if connection already exists
+                const existingConnection = connections.find(conn => 
+                    conn.source === sourceId && conn.target === targetId);
+                
+                if (existingConnection) {
+                    showToast('Connection already exists');
+                    return;
+                }
+                
+                // Add connection to data model
+                const connectionId = `conn-${connections.length}`;
+                connections.push({
+                    id: connectionId,
+                    source: sourceId,
+                    target: targetId
+                });
+                
+                // Draw the connection
+                drawConnection(sourceId, targetId, connectionId);
+                updateJsonOutput();
+                
+                const sourceType = getNodeById(sourceId)?.type || 'node';
+                const targetType = getNodeById(targetId)?.type || 'node';
+                showToast(`Connected ${sourceType} to ${targetType}`);
+            }
+            
+            // Draw a connection between two nodes
+            function drawConnection(sourceId, targetId, connectionId) {
+                // Create the visual connection line
+                const connection = document.createElement('div');
+                connection.className = 'connection';
+                connection.dataset.source = sourceId;
+                connection.dataset.target = targetId;
+                connection.dataset.id = connectionId;
+                
+                // Add click handler for selection
+                connection.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    
+                    // Skip if panning
+                    if (isSpaceDown || e.button === 1) return;
+                    
+                    // Toggle selection state
+                    if (selectedConnections.has(connectionId)) {
+                        selectedConnections.delete(connectionId);
+                        connection.classList.remove('selected');
+                    } else {
+                        // Clear selection if not holding Ctrl
+                        if (!e.ctrlKey && !e.metaKey) {
+                            clearSelection();
+                        }
+                        
+                        selectedConnections.add(connectionId);
+                        connection.classList.add('selected');
+                    }
+                });
+                
+                // Update its position
+                updateConnectionPosition(connection);
+                
+                // Add to canvas
+                canvas.appendChild(connection);
+                
+                // Return the connection element
+                return connection;
+            }
+            
+            // Update a connection's position
+            function updateConnectionPosition(connection) {
+                const sourceId = connection.dataset.source;
+                const targetId = connection.dataset.target;
+                
+                const sourceNode = document.getElementById(sourceId);
+                const targetNode = document.getElementById(targetId);
+                
+                if (!sourceNode || !targetNode) return;
+                
+                // Find the connectors
+                const outputConnector = sourceNode.querySelector('.output-connector');
+                const inputConnector = targetNode.querySelector('.input-connector');
+                
+                if (!outputConnector || !inputConnector) return;
+                
+                // Get connector positions in canvas coordinates
+                const sourceRect = outputConnector.getBoundingClientRect();
+                const targetRect = inputConnector.getBoundingClientRect();
+                
+                const sourcePos = screenToCanvas(
+                    sourceRect.left + sourceRect.width / 2,
+                    sourceRect.top + sourceRect.height / 2
+                );
+                
+                const targetPos = screenToCanvas(
+                    targetRect.left + targetRect.width / 2,
+                    targetRect.top + targetRect.height / 2
+                );
+                
+                // Calculate distance and angle
+                const dx = targetPos.x - sourcePos.x;
+                const dy = targetPos.y - sourcePos.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+                
+                // Update the connection
+                connection.style.width = `${distance}px`;
+                connection.style.left = `${sourcePos.x}px`;
+                connection.style.top = `${sourcePos.y}px`;
+                connection.style.transform = `rotate(${angle}deg)`;
+            }
+            
+            // Update all connections
+            function updateConnections() {
+                document.querySelectorAll('.connection').forEach(updateConnectionPosition);
+            }
+            
+            // Delete a connection
+            function deleteConnection(connectionId) {
+                // Find the connection
+                const connection = connections.find(conn => conn.id === connectionId);
+                if (!connection) return;
+                
+                // Remove from the DOM
+                document.querySelector(`.connection[data-id="${connectionId}"]`)?.remove();
+                
+                // Remove from the data model
+                connections = connections.filter(conn => conn.id !== connectionId);
+                
+                // Remove from selection
+                selectedConnections.delete(connectionId);
+                
+                // Update JSON output
+                updateJsonOutput();
+                
+                showToast('Connection deleted');
+            }
+            
+            // Get a node data by ID
+            function getNodeById(id) {
+                return nodes.find(node => node.id === id);
+            }
+            
+            // Render the properties panel for selected node
+            function renderPropertiesPanel(nodeId) {
+                const nodeData = getNodeById(nodeId);
+                if (!nodeData) {
+                    propertiesPanel.innerHTML = `<p class="text-gray-500 dark:text-gray-400 text-center mt-8">Select a node to edit its properties</p>`;
+                    return;
+                }
+                
+                const definition = componentDefinitions[nodeData.type];
+                if (!definition) return;
+                
+                let html = `<form class="node-form space-y-4">`;
+                
+                // Add properties fields
+                for (const [key, prop] of Object.entries(definition.properties)) {
+                    const value = nodeData.properties[key] !== undefined ? nodeData.properties[key] : prop.default;
+                    
+                    html += `<div>`;
+                    html += `<label for="${key}" class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">${prop.label}</label>`;
+                    
+                    switch (prop.type) {
+                        case 'textarea':
+                            html += `<textarea 
+                                id="${key}" 
+                                name="${key}" 
+                                rows="${prop.rows || 3}" 
+                                class="w-full rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 bg-white dark:bg-gray-700 text-sm"
+                            >${value}</textarea>`;
+                            break;
+                            
+                        case 'select':
+                            html += `<select 
+                                id="${key}" 
+                                name="${key}" 
+                                class="w-full rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 bg-white dark:bg-gray-700 text-sm"
+                            >`;
+                            for (const option of prop.options) {
+                                const selected = option === value ? 'selected' : '';
+                                html += `<option value="${option}" ${selected}>${option}</option>`;
+                            }
+                            html += `</select>`;
+                            break;
+                            
+                        case 'checkbox':
+                            const checked = value ? 'checked' : '';
+                            html += `<div class="mt-1">
+                                <input 
+                                    type="checkbox" 
+                                    id="${key}" 
+                                    name="${key}" 
+                                    ${checked}
+                                    class="rounded border-gray-300 dark:border-gray-700 text-indigo-600 focus:ring-indigo-500"
+                                >
+                            </div>`;
+                            break;
+                            
+                        default:
+                            html += `<input 
+                                type="${prop.type}" 
+                                id="${key}" 
+                                name="${key}" 
+                                value="${value}" 
+                                class="w-full rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 bg-white dark:bg-gray-700 text-sm"
+                            >`;
+                            break;
+                    }
+                    
+                    html += `</div>`;
+                }
+                
+                html += `</form>`;
+                propertiesPanel.innerHTML = html;
+                
+                // Add event listeners to form elements
+                const form = propertiesPanel.querySelector('form');
+                const inputs = form.querySelectorAll('input, textarea, select');
+                
+                inputs.forEach(input => {
+                    input.addEventListener('change', () => {
+                        // Update node data
+                        if (input.type === 'checkbox') {
+                            nodeData.properties[input.name] = input.checked;
+                        } else {
+                            nodeData.properties[input.name] = input.value;
+                        }
+                        
+                        // Update node display
+                        updateNodeDisplay(nodeData);
+                        
+                        // Update JSON output
+                        updateJsonOutput();
+                    });
+                });
+            }
+            
+            // Update node display
+            function updateNodeDisplay(nodeData) {
+                if (!nodeData) return;
+                
+                const node = document.getElementById(nodeData.id);
+                if (!node) return;
+                
+                const nameEl = node.querySelector('.node-name');
+                if (nameEl) {
+                    if (nodeData.type === 'command' && nodeData.properties.commandName) {
+                        nameEl.textContent = nodeData.properties.commandName;
+                    } else if ((nodeData.type === 'variable' || nodeData.type === 'parameter') && nodeData.properties.name) {
+                        nameEl.textContent = nodeData.properties.name;
+                    } else if (nodeData.properties.name) {
+                        nameEl.textContent = nodeData.properties.name;
+                    }
+                }
+            }
+            
+            // Delete a node
+            function deleteNode(nodeId) {
+                // Remove node element
+                const node = document.getElementById(nodeId);
+                if (node) {
+                    node.remove();
+                }
+                
+                // Remove from nodes array
+                nodes = nodes.filter(node => node.id !== nodeId);
+                
+                // Find all connections to/from this node
+                const connectionsToDelete = connections.filter(conn => 
+                    conn.source === nodeId || conn.target === nodeId
+                );
+                
+                // Delete each connection
+                connectionsToDelete.forEach(conn => deleteConnection(conn.id));
+                
+                // Remove from selection
+                selectedNodes.delete(nodeId);
+                
+                // Update properties panel if needed
+                updatePropertiesPanel();
+                
+                // Update JSON output
+                updateJsonOutput();
+                
+                showToast('Node deleted');
+            }
+            
+            // Syntax highlighting for JSON
+            function highlightJson(json) {
+                if (!json) return '';
+                
+                return json
+                    .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+                        let cls = 'number';
+                        if (/^"/.test(match)) {
+                            if (/:$/.test(match)) {
+                                cls = 'key';
+                                // Remove the trailing :
+                                match = match.substring(0, match.length - 1);
+                            } else {
+                                cls = 'string';
+                            }
+                        } else if (/true|false/.test(match)) {
+                            cls = 'boolean';
+                        } else if (/null/.test(match)) {
+                            cls = 'null';
+                        }
+                        
+                        // Add spans for highlighting
+                        if (cls === 'key') {
+                            return '<span class="' + cls + '">' + match + '</span>:';
+                        }
+                        return '<span class="' + cls + '">' + match + '</span>';
+                    })
+                    .replace(/[{}[\],]/g, function(match) {
+                        return '<span class="punctuation">' + match + '</span>';
+                    });
+            }
+            
+            // Event listeners for global settings
+            welcomeMessage.addEventListener('input', updateJsonOutput);
+            globalVariables.addEventListener('input', updateJsonOutput);
+            
+            // Build the JSON for commands.json
+            function updateJsonOutput() {
+                // Build the JSON structure
+                const result = {
+                    welcome: welcomeMessage.value || "Welcome to TaskTrack CLI! Type 'help' to see available commands.",
+                    variables: {},
+                    commands: {}
+                };
+                
+                // Add global variables from the editor
+                try {
+                    result.variables = JSON.parse(globalVariables.value || '{}');
+                } catch (e) {
+                    console.error('Invalid JSON in global variables:', e);
+                    // Keep an empty object if JSON is invalid
+                }
+                
+                // Add variables from nodes
+                nodes.filter(node => node.type === 'variable').forEach(node => {
+                    if (node.properties.name) {
+                        result.variables[node.properties.name] = node.properties.value || '';
+                    }
+                });
+                
+                // Add commands
+                const commandNodes = nodes.filter(node => node.type === 'command');
+                
+                // Process each command node
+                commandNodes.forEach(cmdNode => {
+                    if (!cmdNode.properties.commandName) return;
+                    
+                    const cmdObj = {};
+                    
+                    // Add basic command properties
+                    if (cmdNode.properties.description) {
+                        cmdObj.description = cmdNode.properties.description;
+                    }
+                    
+                    // Add aliases if any
+                    if (cmdNode.properties.alias) {
+                        const aliases = cmdNode.properties.alias.split(',').map(a => a.trim()).filter(Boolean);
+                        if (aliases.length === 1) {
+                            cmdObj.alias = aliases[0];
+                        } else if (aliases.length > 1) {
+                            cmdObj.alias = aliases;
+                        }
+                    }
+                    
+                    // Add parameters and options
+                    const cmdParams = findCommandParameters(cmdNode);
+                    if (cmdParams.positional.length > 0) {
+                        cmdObj.positional = {};
+                        cmdParams.positional.forEach(param => {
+                            cmdObj.positional[param.properties.name] = buildParameterObject(param);
+                        });
+                    }
+                    
+                    if (cmdParams.options.length > 0) {
+                        cmdObj.options = {};
+                        cmdParams.options.forEach(param => {
+                            cmdObj.options[param.properties.name] = buildParameterObject(param);
+                        });
+                    }
+                    
+                    // Find all components directly connected to this command
+                    const handlerComponents = findConnectedComponents(cmdNode);
+                    
+                    // Add handler components if any
+                    if (handlerComponents.length === 1) {
+                        cmdObj.handler = handlerComponents[0];
+                    } else if (handlerComponents.length > 1) {
+                        cmdObj.handler = handlerComponents;
+                    }
+                    
+                    // Add to commands object
+                    result.commands[cmdNode.properties.commandName] = cmdObj;
+                });
+                
+                // Format and display JSON
+                const jsonString = JSON.stringify(result, null, 2);
+                
+                // Set raw JSON (no HTML)
+                rawJson.value = jsonString;
+                
+                // Add syntax highlighting (HTML markup for display only)
+                jsonHighlight.innerHTML = highlightJson(jsonString);
+                
+                // Sync scroll position between raw textarea and highlighted view
+                rawJson.addEventListener('scroll', () => {
+                    jsonHighlight.scrollTop = rawJson.scrollTop;
+                    jsonHighlight.scrollLeft = rawJson.scrollLeft;
+                });
+            }
+            
+            // Find parameters connected to a command
+            function findCommandParameters(cmdNode) {
+                const result = {
+                    positional: [],
+                    options: []
+                };
+                
+                // Check all connections to find parameters connected to this command
+                connections.forEach(conn => {
+                    // For parameters, they connect FROM the parameter TO the command
+                    if (conn.target === cmdNode.id) {
+                        const sourceNode = getNodeById(conn.source);
+                        if (sourceNode && sourceNode.type === 'parameter') {
+                            // Add to appropriate array based on isPositional flag
+                            if (sourceNode.properties.isPositional) {
+                                result.positional.push(sourceNode);
+                            } else {
+                                result.options.push(sourceNode);
+                            }
+                        }
+                    }
+                });
+                
+                return result;
+            }
+            
+            // Build a parameter object
+            function buildParameterObject(paramNode) {
+                const result = {};
+                
+                if (paramNode.properties.description) {
+                    result.description = paramNode.properties.description;
+                }
+                
+                if (paramNode.properties.type) {
+                    result.type = paramNode.properties.type;
+                }
+                
+                if (paramNode.properties.required) {
+                    result.demandOption = true;
+                }
+                
+                if (paramNode.properties.default && paramNode.properties.default.trim() !== '') {
+                    result.default = paramNode.properties.default.trim();
+                }
+                
+                if (paramNode.properties.choices && paramNode.properties.choices.trim() !== '') {
+                    const choices = paramNode.properties.choices.split(',').map(c => c.trim()).filter(Boolean);
+                    if (choices.length > 0) {
+                        result.choices = choices;
+                    }
+                }
+                
+                return result;
+            }
+            
+            // Find components connected to a command
+            function findConnectedComponents(cmdNode) {
+                let handlerComponents = [];
+                let visited = new Set();
+                
+                // Get all direct connections FROM this command
+                const directConnections = connections.filter(conn => conn.source === cmdNode.id);
+                
+                // Process each direct connection
+                directConnections.forEach(conn => {
+                    const targetNode = getNodeById(conn.target);
+                    if (!targetNode || targetNode.type === 'command' || targetNode.type === 'parameter' || visited.has(targetNode.id)) return;
+                    
+                    // Add this component
+                    const component = buildComponentObject(targetNode);
+                    if (component) {
+                        handlerComponents.push(component);
+                        visited.add(targetNode.id);
+                    }
+                    
+                    // Follow the component chain
+                    let nextComponent = targetNode;
+                    while (nextComponent) {
+                        // Find the next connected component
+                        const nextConn = connections.find(c => c.source === nextComponent.id);
+                        if (!nextConn) break;
+                        
+                        // Get the target node
+                        nextComponent = getNodeById(nextConn.target);
+                        if (!nextComponent || nextComponent.type === 'command' || nextComponent.type === 'parameter' || visited.has(nextComponent.id)) break;
+                        
+                        // Add this component
+                        const nextComponentObj = buildComponentObject(nextComponent);
+                        if (nextComponentObj) {
+                            handlerComponents.push(nextComponentObj);
+                            visited.add(nextComponent.id);
+                        }
+                    }
+                });
+                
+                return handlerComponents;
+            }
+            
+            // Build a component object
+            function buildComponentObject(node) {
+                if (!node) return null;
+                
+                const result = {
+                    component: node.type
+                };
+                
+                // Add properties based on component type
+                switch (node.type) {
+                    case 'text':
+                        result.output = node.properties.output || '';
+                        if (node.properties.duration && parseInt(node.properties.duration) > 0) {
+                            result.duration = parseInt(node.properties.duration);
+                        }
+                        break;
+                        
+                    case 'progressBar':
+                        result.output = node.properties.output || 'Loading...';
+                        result.duration = parseInt(node.properties.duration) || 2000;
+                        break;
+                        
+                    case 'spinner':
+                        result.output = node.properties.output || 'Processing...';
+                        result.duration = parseInt(node.properties.duration) || 2000;
+                        if (node.properties.conclusion) {
+                            result.conclusion = node.properties.conclusion;
+                        }
+                        break;
+                        
+                    case 'table':
+                        try {
+                            result.output = JSON.parse(node.properties.tableData || '[]');
+                        } catch (e) {
+                            result.output = [];
+                            console.error('Invalid table data:', e);
+                        }
+                        break;
+                        
+                    case 'input':
+                    case 'select':
+                    case 'confirm':
+                    case 'password':
+                        result.name = node.properties.name || '';
+                        result.message = node.properties.message || '';
+                        
+                        if (node.properties.initial !== undefined && node.properties.initial !== '') {
+                            result.initial = node.type === 'confirm' 
+                                ? node.properties.initial === true || node.properties.initial === 'true'
+                                : node.properties.initial;
+                        }
+                        
+                        if (node.type === 'select' && node.properties.choices) {
+                            try {
+                                result.choices = JSON.parse(node.properties.choices || '[]');
+                            } catch (e) {
+                                result.choices = [];
+                                console.error('Invalid choices data:', e);
+                            }
+                        }
+                        break;
+                        
+                    case 'conditional':
+                        if (node.properties.if) {
+                            result.output = {
+                                if: node.properties.if
+                            };
+                            
+                            // Try to parse "then" as JSON array
+                            if (node.properties.then) {
+                                try {
+                                    result.output.then = JSON.parse(node.properties.then);
+                                } catch (e) {
+                                    result.output.then = [];
+                                }
+                            }
+                            
+                            // Try to parse "else" as JSON object
+                            if (node.properties.else) {
+                                try {
+                                    result.output.else = JSON.parse(node.properties.else);
+                                } catch (e) {
+                                    result.output.else = {};
+                                }
+                            }
+                        }
+                        break;
+                }
+                
+                return result;
+            }
+            
+            // Toast notification
+            function showToast(message, duration = 3000) {
+                toast.textContent = message;
+                toast.classList.remove('hidden', 'translate-y-20', 'opacity-0');
+                
+                clearTimeout(toast.timeout);
+                toast.timeout = setTimeout(() => {
+                    toast.classList.add('translate-y-20', 'opacity-0');
+                }, duration);
+            }
+            
+            // Copy JSON button
+            document.getElementById('copy-json').addEventListener('click', () => {
+                navigator.clipboard.writeText(rawJson.value)
+                    .then(() => {
+                        showToast('JSON copied to clipboard');
+                    })
+                    .catch(err => {
+                        showToast('Error copying to clipboard: ' + err);
+                    });
+            });
+            
+            // Fixed Clear button - properly clears the canvas without requiring confirmation
+            document.getElementById('clear-button').addEventListener('click', () => {
+                // Clear all nodes and connections
+                canvas.innerHTML = '';
+                nodes = [];
+                connections = [];
+                selectedNodes.clear();
+                selectedConnections.clear();
+                nextNodeId = 1;
+                
+                // Reset panels
+                updatePropertiesPanel();
+                updateJsonOutput();
+                
+                showToast('Canvas cleared');
+            });
+            
+            // Center button
+            document.getElementById('center-button').addEventListener('click', () => {
+                if (nodes.length === 0) return;
+                
+                // Calculate bounds of all nodes
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                
+                nodes.forEach(nodeData => {
+                    const nodeEl = document.getElementById(nodeData.id);
+                    if (!nodeEl) return;
+                    
+                    const left = parseInt(nodeEl.style.left) || 0;
+                    const top = parseInt(nodeEl.style.top) || 0;
+                    const width = nodeEl.offsetWidth;
+                    const height = nodeEl.offsetHeight;
+                    
+                    minX = Math.min(minX, left);
+                    minY = Math.min(minY, top);
+                    maxX = Math.max(maxX, left + width);
+                    maxY = Math.max(maxY, top + height);
+                });
+                
+                // Calculate center of nodes
+                const centerX = (minX + maxX) / 2;
+                const centerY = (minY + maxY) / 2;
+                
+                // Center viewport on nodes
+                canvasState.offsetX = centerX * canvasState.scale - canvasState.containerWidth / 2;
+                canvasState.offsetY = centerY * canvasState.scale - canvasState.containerHeight / 2;
+                
+                // Update transform
+                updateCanvasTransform();
+                
+                // Update connections
+                updateConnections();
+                
+                showToast('Nodes centered in viewport');
+            });
+            
+            // Parse and load the TaskTrack CLI commands
+            function loadTaskTrackData() {
+                const taskTrackJson = {
+                    "welcome": "Welcome to TaskTrack CLI! Type 'help' to see available commands.",
+                    "variables": {
+                        "isLoggedIn": "false"
+                    },
+                    "commands": {
+                        "login": {
+                            "description": "Log in to TaskTrack",
+                            "handler": [
+                                {
+                                    "component": "input",
+                                    "name": "username",
+                                    "message": "Enter your username:"
+                                },
+                                {
+                                    "component": "password",
+                                    "name": "password",
+                                    "message": "Enter your password:"
+                                },
+                                {
+                                    "component": "spinner",
+                                    "output": [
+                                        "Logging in",
+                                        "Please wait",
+                                        "Verifying credentials"
+                                    ],
+                                    "duration": 2000
+                                },
+                                {
+                                    "component": "variable",
+                                    "output": {
+                                        "isLoggedIn": "true"
+                                    }
+                                },
+                                {
+                                    "component": "text",
+                                    "output": "Welcome, {{username}}! You are now logged in."
+                                }
+                            ]
+                        },
+                        "logout": {
+                            "description": "Log out from TaskTrack",
+                            "handler": [
+                                {
+                                    "component": "conditional",
+                                    "output": {
+                                        "if": "isLoggedIn == 'true'",
+                                        "then": [
+                                            {
+                                                "component": "spinner",
+                                                "output": "Logging out...",
+                                                "duration": 1000
+                                            },
+                                            {
+                                                "component": "variable",
+                                                "output": {
+                                                    "username": "",
+                                                    "isLoggedIn": "false"
+                                                }
+                                            },
+                                            {
+                                                "component": "text",
+                                                "output": "You have been logged out successfully."
+                                            }
+                                        ],
+                                        "else": {
+                                            "component": "text",
+                                            "output": "You are not currently logged in."
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        "list": {
+                            "description": "List all tasks",
+                            "handler": [
+                                {
+                                    "component": "conditional",
+                                    "output": {
+                                        "if": "isLoggedIn == 'true'",
+                                        "then": [
+                                            {
+                                                "component": "spinner",
+                                                "output": "Fetching tasks...",
+                                                "duration": 1000
+                                            },
+                                            {
+                                                "component": "table",
+                                                "output": [
+                                                    ["ID", "Task", "Priority", "Status"],
+                                                    [
+                                                        "1",
+                                                        "Implement login",
+                                                        "High",
+                                                        "In Progress"
+                                                    ],
+                                                    ["2", "Create task list", "Medium", "Todo"],
+                                                    [
+                                                        "3",
+                                                        "Add task prioritization",
+                                                        "Low",
+                                                        "Completed"
+                                                    ]
+                                                ]
+                                            }
+                                        ],
+                                        "else": {
+                                            "component": "text",
+                                            "output": "Please log in to view tasks."
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                };
+                
+                // Create visual representation
+                createTaskTrackVisualFlow(taskTrackJson);
+            }
+            
+            // Create visual flow for TaskTrack CLI
+            function createTaskTrackVisualFlow(data) {
+                // Set welcome message and global variables
+                welcomeMessage.value = data.welcome;
+                globalVariables.value = JSON.stringify(data.variables, null, 2);
+                
+                // Start position
+                let yPosition = 100;
+                const commandSpacing = 300;
+                
+                // Create each command
+                Object.entries(data.commands).forEach(([cmdName, cmdData], index) => {
+                    // Create command node
+                    const cmdX = 250;
+                    const cmdY = yPosition + (index * commandSpacing);
+                    const cmdId = createNode('command', cmdX, cmdY);
+                    
+                    // Update command properties
+                    const cmdNode = getNodeById(cmdId);
+                    if (cmdNode) {
+                        cmdNode.properties.commandName = cmdName;
+                        cmdNode.properties.description = cmdData.description || '';
+                        updateNodeDisplay(cmdNode);
+                    }
+                    
+                    // If it has handlers, create them
+                    if (cmdData.handler && Array.isArray(cmdData.handler)) {
+                        let lastNodeId = cmdId;
+                        let componentY = cmdY;
+                        
+                        // Create each handler component
+                        cmdData.handler.forEach((handlerItem, handlerIndex) => {
+                            componentY += 100;
+                            
+                            // Create component node based on its type
+                            const componentX = cmdX + 200;
+                            const componentId = createNode(handlerItem.component || 'text', componentX, componentY);
+                            
+                            // Update component properties
+                            const componentNode = getNodeById(componentId);
+                            if (componentNode) {
+                                // Set common properties
+                                if (handlerItem.name) {
+                                    componentNode.properties.name = handlerItem.name;
+                                }
+                                
+                                if (handlerItem.message) {
+                                    componentNode.properties.message = handlerItem.message;
+                                }
+                                
+                                // Handle special output formats
+                                if (handlerItem.output) {
+                                    if (typeof handlerItem.output === 'string') {
+                                        componentNode.properties.output = handlerItem.output;
+                                    } else if (Array.isArray(handlerItem.output)) {
+                                        componentNode.properties.output = JSON.stringify(handlerItem.output);
+                                    } else if (typeof handlerItem.output === 'object') {
+                                        // For conditional components
+                                        if (handlerItem.component === 'conditional') {
+                                            componentNode.properties.if = handlerItem.output.if || '';
+                                            componentNode.properties.then = JSON.stringify(handlerItem.output.then || [], null, 2);
+                                            componentNode.properties.else = JSON.stringify(handlerItem.output.else || {}, null, 2);
+                                        } else {
+                                            componentNode.properties.output = JSON.stringify(handlerItem.output, null, 2);
+                                        }
+                                    }
+                                }
+                                
+                                // Set duration if provided
+                                if (handlerItem.duration) {
+                                    componentNode.properties.duration = handlerItem.duration;
+                                }
+                                
+                                updateNodeDisplay(componentNode);
+                            }
+                            
+                            // Connect component to previous node
+                            createConnection(lastNodeId, componentId);
+                            
+                            // Update last node for next connection
+                            lastNodeId = componentId;
+                        });
+                    }
+                });
+                
+                // Center the canvas on the created nodes
+                setTimeout(() => {
+                    document.getElementById('center-button').click();
+                }, 200);
+            }
+            
+            // Load the TaskTrack CLI data when the app starts
+            loadTaskTrackData();
+        });
+    </script>
+</body>
+</html>
