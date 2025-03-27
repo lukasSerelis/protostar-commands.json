@@ -115,6 +115,7 @@
         .component-node { border-color: #10b981; }
         .variable-node { border-color: #f59e0b; }
         .parameter-node { border-color: #ec4899; }
+        .conditional-node { border-color: #8b5cf6; }
         
         .header {
             padding: 8px;
@@ -129,6 +130,7 @@
         .component-node .header { background-color: #10b981; }
         .variable-node .header { background-color: #f59e0b; }
         .parameter-node .header { background-color: #ec4899; }
+        .conditional-node .header { background-color: #8b5cf6; }
         
         .content {
             padding: 10px;
@@ -172,6 +174,54 @@
             transform: translateX(-50%) scale(1.2);
         }
         
+        /* True path connector */
+        .true-connector {
+            bottom: -8px;
+            left: 25%;
+            transform: translateX(-50%);
+            background-color: #22c55e; /* Green */
+        }
+        
+        .true-connector:hover {
+            transform: translateX(-50%) scale(1.2);
+        }
+        
+        /* False path connector */
+        .false-connector {
+            bottom: -8px;
+            left: 75%;
+            transform: translateX(-50%);
+            background-color: #ef4444; /* Red */
+        }
+        
+        .false-connector:hover {
+            transform: translateX(-50%) scale(1.2);
+        }
+        
+        /* Label for connectors */
+        .connector-label {
+            position: absolute;
+            font-size: 10px;
+            transform: translateX(-50%);
+            white-space: nowrap;
+            pointer-events: none;
+            color: #333;
+        }
+        
+        .dark .connector-label {
+            color: #f1f1f1;
+        }
+        
+        .true-label {
+            bottom: -25px;
+            left: 25%;
+        }
+        
+        .false-label {
+            bottom: -25px;
+            left: 75%;
+        }
+
         .connection {
             position: absolute;
             border-top: 2px dashed #64748b;
@@ -212,6 +262,34 @@
         
         .dark .connection:hover::after, .dark .connection.selected::after {
             color: #60a5fa;
+        }
+        
+        /* True path connection */
+        .true-connection {
+            border-top: 2px dashed #22c55e;
+        }
+        
+        .true-connection::after {
+            content: '→';
+            color: #22c55e;
+        }
+        
+        .true-connection:hover, .true-connection.selected {
+            border-top: 3px solid #22c55e;
+        }
+        
+        /* False path connection */
+        .false-connection {
+            border-top: 2px dashed #ef4444;
+        }
+        
+        .false-connection::after {
+            content: '→';
+            color: #ef4444;
+        }
+        
+        .false-connection:hover, .false-connection.selected {
+            border-top: 3px solid #ef4444;
         }
         
         .selection-box {
@@ -474,6 +552,7 @@
                             <div class="component-template bg-white dark:bg-gray-800 p-2 rounded border-l-4 border-blue-500 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" data-type="command">Command</div>
                             <div class="component-template bg-white dark:bg-gray-800 p-2 rounded border-l-4 border-yellow-500 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" data-type="variable">Variable</div>
                             <div class="component-template bg-white dark:bg-gray-800 p-2 rounded border-l-4 border-pink-500 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" data-type="parameter">Parameter</div>
+                            <div class="component-template bg-white dark:bg-gray-800 p-2 rounded border-l-4 border-purple-500 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" data-type="conditional">Conditional</div>
                         </div>
                     </div>
                     
@@ -494,6 +573,7 @@
                             <div class="component-template bg-white dark:bg-gray-800 p-2 rounded border-l-4 border-green-500 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" data-type="table">Table</div>
                             <div class="component-template bg-white dark:bg-gray-800 p-2 rounded border-l-4 border-green-500 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" data-type="progressBar">Progress Bar</div>
                             <div class="component-template bg-white dark:bg-gray-800 p-2 rounded border-l-4 border-green-500 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" data-type="spinner">Spinner</div>
+                            <div class="component-template bg-white dark:bg-gray-800 p-2 rounded border-l-4 border-green-500 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" data-type="setVariable">Set Variable</div>
                         </div>
                     </div>
                 </div>
@@ -1003,14 +1083,24 @@ document.addEventListener('keydown', (e) => {
                 },
                 conditional: {
                     title: 'Conditional',
-                    nodeType: 'component-node',
+                    nodeType: 'conditional-node',
                     icon: '🔀',
+                    hasInput: true,
+                    hasOutput: false, // No regular output - uses true/false connectors instead
+                    hasTrueFalseOutputs: true, // Special flag for conditional paths
+                    properties: {
+                        condition: { type: 'text', label: 'Condition (e.g. isLoggedIn == "true")', default: '' }
+                    }
+                },
+                setVariable: {
+                    title: 'Set Variable',
+                    nodeType: 'component-node',
+                    icon: '📤',
                     hasInput: true,
                     hasOutput: true,
                     properties: {
-                        if: { type: 'text', label: 'Condition', default: '' },
-                        then: { type: 'textarea', label: 'Then Components (JSON)', default: '[]', rows: 3 },
-                        else: { type: 'textarea', label: 'Else Components (JSON)', default: '{}', rows: 3 }
+                        variableName: { type: 'text', label: 'Variable Name', default: '' },
+                        variableValue: { type: 'text', label: 'Variable Value', default: '' }
                     }
                 }
             };
@@ -1063,13 +1153,17 @@ document.addEventListener('keydown', (e) => {
                         e.stopPropagation();
                         if (isDraggingConnection && dragStartConnector) {
                             // Only allow connecting from output to input
-                            if (dragStartConnector.dataset.type === 'output') {
+                            if (dragStartConnector.dataset.type === 'output' || 
+                                dragStartConnector.dataset.type === 'true' ||
+                                dragStartConnector.dataset.type === 'false') {
+                                
                                 const sourceId = dragStartConnector.dataset.nodeid;
                                 const targetId = nodeId;
+                                const connectionType = dragStartConnector.dataset.type;
                                 
                                 // Don't connect to itself
                                 if (sourceId !== targetId) {
-                                    createConnection(sourceId, targetId);
+                                    createConnection(sourceId, targetId, connectionType);
                                 }
                             }
                             
@@ -1089,6 +1183,47 @@ document.addEventListener('keydown', (e) => {
                     outputConnector.addEventListener('mousedown', (e) => {
                         e.stopPropagation();
                         startConnectionDrag(outputConnector, e);
+                    });
+                }
+                
+                // Add true/false connectors for conditional nodes
+                if (definition.hasTrueFalseOutputs) {
+                    // True path connector
+                    const trueConnector = document.createElement('div');
+                    trueConnector.className = 'connector true-connector';
+                    trueConnector.dataset.nodeid = nodeId;
+                    trueConnector.dataset.type = 'true';
+                    node.appendChild(trueConnector);
+                    
+                    // True label
+                    const trueLabel = document.createElement('div');
+                    trueLabel.className = 'connector-label true-label';
+                    trueLabel.textContent = 'True';
+                    node.appendChild(trueLabel);
+                    
+                    // False path connector
+                    const falseConnector = document.createElement('div');
+                    falseConnector.className = 'connector false-connector';
+                    falseConnector.dataset.nodeid = nodeId;
+                    falseConnector.dataset.type = 'false';
+                    node.appendChild(falseConnector);
+                    
+                    // False label
+                    const falseLabel = document.createElement('div');
+                    falseLabel.className = 'connector-label false-label';
+                    falseLabel.textContent = 'False';
+                    node.appendChild(falseLabel);
+                    
+                    // True connector event
+                    trueConnector.addEventListener('mousedown', (e) => {
+                        e.stopPropagation();
+                        startConnectionDrag(trueConnector, e);
+                    });
+                    
+                    // False connector event
+                    falseConnector.addEventListener('mousedown', (e) => {
+                        e.stopPropagation();
+                        startConnectionDrag(falseConnector, e);
                     });
                 }
                 
@@ -1587,6 +1722,14 @@ document.addEventListener('keydown', (e) => {
                 // Create a temporary connection line
                 tempConnection = document.createElement('div');
                 tempConnection.className = 'connection';
+                
+                // If it's a true/false connector, use special styling
+                if (connector.dataset.type === 'true') {
+                    tempConnection.classList.add('true-connection');
+                } else if (connector.dataset.type === 'false') {
+                    tempConnection.classList.add('false-connection');
+                }
+                
                 canvas.appendChild(tempConnection);
                 
                 // Update the connection line on mousemove
@@ -1632,10 +1775,11 @@ document.addEventListener('keydown', (e) => {
                 if (element && element.classList.contains('connector') && element.dataset.type === 'input') {
                     const sourceId = dragStartConnector.dataset.nodeid;
                     const targetId = element.dataset.nodeid;
+                    const connectionType = dragStartConnector.dataset.type;
                     
                     // Don't connect to itself
                     if (sourceId !== targetId) {
-                        createConnection(sourceId, targetId);
+                        createConnection(sourceId, targetId, connectionType);
                     }
                 }
                 
@@ -1657,10 +1801,12 @@ document.addEventListener('keydown', (e) => {
             }
             
             // Create a connection between two nodes
-            function createConnection(sourceId, targetId) {
+            function createConnection(sourceId, targetId, connectionType = 'output') {
                 // Check if connection already exists
                 const existingConnection = connections.find(conn => 
-                    conn.source === sourceId && conn.target === targetId);
+                    conn.source === sourceId && 
+                    conn.target === targetId && 
+                    conn.type === connectionType);
                 
                 if (existingConnection) {
                     showToast('Connection already exists');
@@ -1672,26 +1818,43 @@ document.addEventListener('keydown', (e) => {
                 connections.push({
                     id: connectionId,
                     source: sourceId,
-                    target: targetId
+                    target: targetId,
+                    type: connectionType // 'output', 'true', or 'false'
                 });
                 
                 // Draw the connection
-                drawConnection(sourceId, targetId, connectionId);
+                drawConnection(sourceId, targetId, connectionId, connectionType);
                 updateJsonOutput();
                 
                 const sourceType = getNodeById(sourceId)?.type || 'node';
                 const targetType = getNodeById(targetId)?.type || 'node';
-                showToast(`Connected ${sourceType} to ${targetType}`);
+                
+                let message = `Connected ${sourceType} to ${targetType}`;
+                if (connectionType === 'true') {
+                    message = `Connected ${sourceType} TRUE path to ${targetType}`;
+                } else if (connectionType === 'false') {
+                    message = `Connected ${sourceType} FALSE path to ${targetType}`;
+                }
+                
+                showToast(message);
             }
             
             // Draw a connection between two nodes
-            function drawConnection(sourceId, targetId, connectionId) {
+            function drawConnection(sourceId, targetId, connectionId, connectionType = 'output') {
                 // Create the visual connection line
                 const connection = document.createElement('div');
                 connection.className = 'connection';
                 connection.dataset.source = sourceId;
                 connection.dataset.target = targetId;
                 connection.dataset.id = connectionId;
+                connection.dataset.type = connectionType;
+                
+                // Apply special styles for true/false connections
+                if (connectionType === 'true') {
+                    connection.classList.add('true-connection');
+                } else if (connectionType === 'false') {
+                    connection.classList.add('false-connection');
+                }
                 
                 // Add click handler for selection
                 connection.addEventListener('click', (e) => {
@@ -1729,6 +1892,7 @@ document.addEventListener('keydown', (e) => {
             function updateConnectionPosition(connection) {
                 const sourceId = connection.dataset.source;
                 const targetId = connection.dataset.target;
+                const connectionType = connection.dataset.type || 'output';
                 
                 const sourceNode = document.getElementById(sourceId);
                 const targetNode = document.getElementById(targetId);
@@ -1736,7 +1900,17 @@ document.addEventListener('keydown', (e) => {
                 if (!sourceNode || !targetNode) return;
                 
                 // Find the connectors
-                const outputConnector = sourceNode.querySelector('.output-connector');
+                let outputConnector;
+                
+                // Select the right output connector based on connection type
+                if (connectionType === 'true') {
+                    outputConnector = sourceNode.querySelector('.true-connector');
+                } else if (connectionType === 'false') {
+                    outputConnector = sourceNode.querySelector('.false-connector');
+                } else {
+                    outputConnector = sourceNode.querySelector('.output-connector');
+                }
+                
                 const inputConnector = targetNode.querySelector('.input-connector');
                 
                 if (!outputConnector || !inputConnector) return;
@@ -1869,6 +2043,23 @@ document.addEventListener('keydown', (e) => {
                     html += `</div>`;
                 }
                 
+                // Add helper text for conditional nodes and setVariable nodes
+                if (nodeData.type === 'conditional') {
+                    html += `<div class="mt-4 text-sm text-gray-600 dark:text-gray-400">
+                        <p>Examples:</p>
+                        <ul class="list-disc pl-5 mt-1 space-y-1">
+                            <li>isLoggedIn == "true"</li>
+                            <li>username != ""</li>
+                            <li>age > 18</li>
+                        </ul>
+                    </div>`;
+                } else if (nodeData.type === 'setVariable') {
+                    html += `<div class="mt-4 text-sm text-gray-600 dark:text-gray-400">
+                        <p>This will set a global variable to the specified value.</p>
+                        <p class="mt-1">You can use this to store state between commands.</p>
+                    </div>`;
+                }
+                
                 html += `</form>`;
                 propertiesPanel.innerHTML = html;
                 
@@ -1907,6 +2098,10 @@ document.addEventListener('keydown', (e) => {
                         nameEl.textContent = nodeData.properties.commandName;
                     } else if ((nodeData.type === 'variable' || nodeData.type === 'parameter') && nodeData.properties.name) {
                         nameEl.textContent = nodeData.properties.name;
+                    } else if (nodeData.type === 'conditional' && nodeData.properties.condition) {
+                        nameEl.textContent = `If ${nodeData.properties.condition}`;
+                    } else if (nodeData.type === 'setVariable' && nodeData.properties.variableName) {
+                        nameEl.textContent = `Set ${nodeData.properties.variableName}`;
                     } else if (nodeData.properties.name) {
                         nameEl.textContent = nodeData.properties.name;
                     }
@@ -2084,7 +2279,7 @@ document.addEventListener('keydown', (e) => {
                 // Check all connections to find parameters connected to this command
                 connections.forEach(conn => {
                     // For parameters, they connect FROM the parameter TO the command
-                    if (conn.target === cmdNode.id) {
+                    if (conn.target === cmdNode.id && conn.type === 'output') {
                         const sourceNode = getNodeById(conn.source);
                         if (sourceNode && sourceNode.type === 'parameter') {
                             // Add to appropriate array based on isPositional flag
@@ -2135,42 +2330,85 @@ document.addEventListener('keydown', (e) => {
                 let handlerComponents = [];
                 let visited = new Set();
                 
-                // Get all direct connections FROM this command
-                const directConnections = connections.filter(conn => conn.source === cmdNode.id);
+                // Process direct regular connections
+                processConnections(cmdNode.id, 'output', handlerComponents, visited);
+                
+                return handlerComponents;
+            }
+            
+            // Process connections recursively
+            function processConnections(nodeId, connType, components, visited) {
+                // Get all direct connections FROM this node with the specified connection type
+                const directConnections = connections.filter(conn => 
+                    conn.source === nodeId && conn.type === connType);
                 
                 // Process each direct connection
                 directConnections.forEach(conn => {
                     const targetNode = getNodeById(conn.target);
                     if (!targetNode || targetNode.type === 'command' || targetNode.type === 'parameter' || visited.has(targetNode.id)) return;
                     
-                    // Add this component
-                    const component = buildComponentObject(targetNode);
-                    if (component) {
-                        handlerComponents.push(component);
+                    // Handle conditional nodes specially
+                    if (targetNode.type === 'conditional') {
+                        // Add conditional component
+                        const conditionalObj = {
+                            component: 'conditional',
+                            output: {
+                                if: targetNode.properties.condition
+                            }
+                        };
+                        
+                        // Process true branch
+                        const trueBranch = [];
+                        const trueVisited = new Set([...visited, targetNode.id]);
+                        processConnections(targetNode.id, 'true', trueBranch, trueVisited);
+                        if (trueBranch.length > 0) {
+                            conditionalObj.output.then = trueBranch;
+                        }
+                        
+                        // Process false branch
+                        const falseBranch = [];
+                        const falseVisited = new Set([...visited, targetNode.id]);
+                        processConnections(targetNode.id, 'false', falseBranch, falseVisited);
+                        if (falseBranch.length > 0) {
+                            conditionalObj.output.else = falseBranch.length === 1 ? 
+                                falseBranch[0] : 
+                                falseBranch;
+                        }
+                        
+                        // Add conditional component to the chain
+                        components.push(conditionalObj);
                         visited.add(targetNode.id);
                     }
-                    
-                    // Follow the component chain
-                    let nextComponent = targetNode;
-                    while (nextComponent) {
-                        // Find the next connected component
-                        const nextConn = connections.find(c => c.source === nextComponent.id);
-                        if (!nextConn) break;
+                    // Handle setVariable nodes specially
+                    else if (targetNode.type === 'setVariable') {
+                        // Add variable component
+                        const variableObj = {
+                            component: 'variable',
+                            output: {
+                                [targetNode.properties.variableName]: targetNode.properties.variableValue
+                            }
+                        };
                         
-                        // Get the target node
-                        nextComponent = getNodeById(nextConn.target);
-                        if (!nextComponent || nextComponent.type === 'command' || nextComponent.type === 'parameter' || visited.has(nextComponent.id)) break;
+                        // Add variable component to the chain
+                        components.push(variableObj);
+                        visited.add(targetNode.id);
                         
+                        // Continue chain with regular output connection
+                        processConnections(targetNode.id, 'output', components, visited);
+                    }
+                    // Handle regular component nodes
+                    else {
                         // Add this component
-                        const nextComponentObj = buildComponentObject(nextComponent);
-                        if (nextComponentObj) {
-                            handlerComponents.push(nextComponentObj);
-                            visited.add(nextComponent.id);
+                        const component = buildComponentObject(targetNode);
+                        if (component) {
+                            components.push(component);
+                            visited.add(targetNode.id);
+                            
+                            // Follow the component chain
+                            processConnections(targetNode.id, 'output', components, visited);
                         }
                     }
                 });
-                
-                return handlerComponents;
             }
             
             // Build a component object
@@ -2231,32 +2469,6 @@ document.addEventListener('keydown', (e) => {
                             } catch (e) {
                                 result.choices = [];
                                 console.error('Invalid choices data:', e);
-                            }
-                        }
-                        break;
-                        
-                    case 'conditional':
-                        if (node.properties.if) {
-                            result.output = {
-                                if: node.properties.if
-                            };
-                            
-                            // Try to parse "then" as JSON array
-                            if (node.properties.then) {
-                                try {
-                                    result.output.then = JSON.parse(node.properties.then);
-                                } catch (e) {
-                                    result.output.then = [];
-                                }
-                            }
-                            
-                            // Try to parse "else" as JSON object
-                            if (node.properties.else) {
-                                try {
-                                    result.output.else = JSON.parse(node.properties.else);
-                                } catch (e) {
-                                    result.output.else = {};
-                                }
                             }
                         }
                         break;
@@ -2474,12 +2686,12 @@ document.addEventListener('keydown', (e) => {
                 
                 // Start position
                 let yPosition = 100;
-                const commandSpacing = 300;
+                const commandSpacing = 400;
                 
                 // Create each command
                 Object.entries(data.commands).forEach(([cmdName, cmdData], index) => {
                     // Create command node
-                    const cmdX = 250;
+                    const cmdX = 200;
                     const cmdY = yPosition + (index * commandSpacing);
                     const cmdId = createNode('command', cmdX, cmdY);
                     
@@ -2493,61 +2705,8 @@ document.addEventListener('keydown', (e) => {
                     
                     // If it has handlers, create them
                     if (cmdData.handler && Array.isArray(cmdData.handler)) {
-                        let lastNodeId = cmdId;
-                        let componentY = cmdY;
-                        
-                        // Create each handler component
-                        cmdData.handler.forEach((handlerItem, handlerIndex) => {
-                            componentY += 100;
-                            
-                            // Create component node based on its type
-                            const componentX = cmdX + 200;
-                            const componentId = createNode(handlerItem.component || 'text', componentX, componentY);
-                            
-                            // Update component properties
-                            const componentNode = getNodeById(componentId);
-                            if (componentNode) {
-                                // Set common properties
-                                if (handlerItem.name) {
-                                    componentNode.properties.name = handlerItem.name;
-                                }
-                                
-                                if (handlerItem.message) {
-                                    componentNode.properties.message = handlerItem.message;
-                                }
-                                
-                                // Handle special output formats
-                                if (handlerItem.output) {
-                                    if (typeof handlerItem.output === 'string') {
-                                        componentNode.properties.output = handlerItem.output;
-                                    } else if (Array.isArray(handlerItem.output)) {
-                                        componentNode.properties.output = JSON.stringify(handlerItem.output);
-                                    } else if (typeof handlerItem.output === 'object') {
-                                        // For conditional components
-                                        if (handlerItem.component === 'conditional') {
-                                            componentNode.properties.if = handlerItem.output.if || '';
-                                            componentNode.properties.then = JSON.stringify(handlerItem.output.then || [], null, 2);
-                                            componentNode.properties.else = JSON.stringify(handlerItem.output.else || {}, null, 2);
-                                        } else {
-                                            componentNode.properties.output = JSON.stringify(handlerItem.output, null, 2);
-                                        }
-                                    }
-                                }
-                                
-                                // Set duration if provided
-                                if (handlerItem.duration) {
-                                    componentNode.properties.duration = handlerItem.duration;
-                                }
-                                
-                                updateNodeDisplay(componentNode);
-                            }
-                            
-                            // Connect component to previous node
-                            createConnection(lastNodeId, componentId);
-                            
-                            // Update last node for next connection
-                            lastNodeId = componentId;
-                        });
+                        // Create the visual flow for handlers
+                        createVisualHandler(cmdId, cmdData.handler, cmdX, cmdY);
                     }
                 });
                 
@@ -2555,6 +2714,128 @@ document.addEventListener('keydown', (e) => {
                 setTimeout(() => {
                     document.getElementById('center-button').click();
                 }, 200);
+            }
+            
+            // Create visual handler for components
+            function createVisualHandler(parentId, handlers, startX, startY) {
+                let lastNodeId = parentId;
+                let currentX = startX + 250;
+                let currentY = startY;
+                
+                // Process each handler component
+                handlers.forEach((handlerItem, index) => {
+                    // Skip if no component type
+                    if (!handlerItem.component) return;
+                    
+                    // Handle conditional components specially
+                    if (handlerItem.component === 'conditional' && handlerItem.output) {
+                        // Create conditional node
+                        const conditionalId = createNode('conditional', currentX, currentY);
+                        
+                        // Connect to previous node
+                        createConnection(lastNodeId, conditionalId);
+                        
+                        // Update properties
+                        const conditionalNode = getNodeById(conditionalId);
+                        if (conditionalNode && handlerItem.output.if) {
+                            conditionalNode.properties.condition = handlerItem.output.if;
+                            updateNodeDisplay(conditionalNode);
+                        }
+                        
+                        // Create "then" branch
+                        if (handlerItem.output.then && Array.isArray(handlerItem.output.then)) {
+                            createVisualHandler(conditionalId, handlerItem.output.then, currentX, currentY - 80, 'true');
+                        }
+                        
+                        // Create "else" branch
+                        if (handlerItem.output.else) {
+                            // Handle both array and object formats
+                            const elseBranch = Array.isArray(handlerItem.output.else) ? 
+                                handlerItem.output.else : [handlerItem.output.else];
+                            
+                            createVisualHandler(conditionalId, elseBranch, currentX, currentY + 80, 'false');
+                        }
+                        
+                        // Update for next component
+                        lastNodeId = conditionalId;
+                        currentY += 150;
+                    }
+                    // Handle variable setter components
+                    else if (handlerItem.component === 'variable' && handlerItem.output) {
+                        // Create setVariable node
+                        const setVarId = createNode('setVariable', currentX, currentY);
+                        
+                        // Connect to previous node
+                        createConnection(lastNodeId, setVarId);
+                        
+                        // Update properties
+                        const setVarNode = getNodeById(setVarId);
+                        if (setVarNode) {
+                            // Get the first variable name/value pair
+                            const varName = Object.keys(handlerItem.output)[0];
+                            const varValue = handlerItem.output[varName];
+                            
+                            setVarNode.properties.variableName = varName;
+                            setVarNode.properties.variableValue = varValue;
+                            updateNodeDisplay(setVarNode);
+                        }
+                        
+                        // Update for next component
+                        lastNodeId = setVarId;
+                        currentY += 100;
+                    }
+                    // Handle regular components
+                    else {
+                        // Create component node
+                        const componentId = createNode(handlerItem.component, currentX, currentY);
+                        
+                        // Connect to previous node with the specified connection type or default to 'output'
+                        const connectionType = arguments[4] || 'output';
+                        createConnection(lastNodeId, componentId, connectionType);
+                        
+                        // Update component properties
+                        const componentNode = getNodeById(componentId);
+                        if (componentNode) {
+                            // Handle common properties
+                            if (handlerItem.name) {
+                                componentNode.properties.name = handlerItem.name;
+                            }
+                            
+                            if (handlerItem.message) {
+                                componentNode.properties.message = handlerItem.message;
+                            }
+                            
+                            // Handle outputs based on type
+                            if (handlerItem.output !== undefined) {
+                                if (typeof handlerItem.output === 'string') {
+                                    componentNode.properties.output = handlerItem.output;
+                                } else if (Array.isArray(handlerItem.output)) {
+                                    componentNode.properties.output = JSON.stringify(handlerItem.output);
+                                } else if (typeof handlerItem.output === 'object') {
+                                    componentNode.properties.output = JSON.stringify(handlerItem.output);
+                                    
+                                    // Special case for table output
+                                    if (handlerItem.component === 'table') {
+                                        componentNode.properties.tableData = JSON.stringify(handlerItem.output);
+                                    }
+                                }
+                            }
+                            
+                            // Set duration if provided
+                            if (handlerItem.duration) {
+                                componentNode.properties.duration = handlerItem.duration;
+                            }
+                            
+                            updateNodeDisplay(componentNode);
+                        }
+                        
+                        // Update for next component
+                        lastNodeId = componentId;
+                        currentY += 100;
+                    }
+                });
+                
+                return lastNodeId;
             }
             
             // Load the TaskTrack CLI data when the app starts
